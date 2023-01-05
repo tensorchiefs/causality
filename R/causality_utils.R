@@ -1,3 +1,6 @@
+library(dagitty)
+library(ggdag)
+
 # Extract the causal values from the DAG
 get_causal_values <- function(dag_model){
   dag <- dag_model$dag
