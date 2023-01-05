@@ -17,3 +17,30 @@ get_causal_values <- function(dag_model){
   names(val) <- paste0(x_from, " -> ", x_to)
   return(val)
 }
+
+
+# get adjacency matrix from dag
+get_adj = function(dag, N) {
+  A = matrix(0, ncol = N, nrow = N)
+  # problems with no edges in dags in tidy_dagitty
+  if(is.na(str_match(dag, "->")[1])){
+    return(A)  
+  }
+  dd = tidy_dagitty(dag)$data
+  A = matrix(0, ncol = N, nrow = N)
+  for (i in 1:nrow(dd)) {
+    from = as.integer(substring(dd$name[i],2))
+    to = as.integer(substring(dd$to[i],2))
+    A[from, to] = 1
+  }
+  return(A)
+} 
+
+get_adj_coef = function(pdm, N){
+  A = get_adj(pdm$dag, N)
+  Av = as.numeric(t(A))
+  Av[which(Av == 1)] = get_causal_values(pdm)
+  return(matrix(Av, nrow=N, byrow = TRUE))
+} 
+
+
