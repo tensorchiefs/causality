@@ -21,6 +21,33 @@ get_causal_values <- function(dag_model){
   return(val)
 }
 
+# From: https://github.com/Scriddie/Varsortability/blob/main/src/varsortability.py
+# With a little help from chatGPT
+varsortability <- function(X, W, tol=1e-9) {
+  # Takes n x d data and a d x d adjacency matrix,
+  # where the i,j-th entry corresponds to the edge weight for i->j,
+  # and returns a value indicating how well the variance order
+  # reflects the causal order.
+  E <- W != 0
+  Ek <- E
+  var <- apply(X, 2, var)
+  n_paths <- 0
+  n_correctly_ordered_paths <- 0
+  
+  #The original python code was:
+  #var / var.T
+  M = kronecker(t(var), var, FUN = "/") #An Entry > 1 is a pair where the "to" has higher variance then the "from"
+  #Loops over possible directed path of length 1,2,...|E|-1 |E| number of nodes
+  for (i in 1:(nrow(E) - 1)) { 
+    n_paths <- n_paths + sum(Ek)
+    n_correctly_ordered_paths <- n_correctly_ordered_paths + sum(Ek & M > 1 + tol)
+    n_correctly_ordered_paths <- n_correctly_ordered_paths + 
+      0.5 * sum(Ek & (M <= 1 + tol) & (M > 1 - tol)) #Borderline 
+    Ek <- Ek %*% E #Considering pathes of an increased length
+  }
+  return(n_correctly_ordered_paths / n_paths)
+}
+
 
 # get adjacency matrix from dag
 get_adj = function(dag, N) {
