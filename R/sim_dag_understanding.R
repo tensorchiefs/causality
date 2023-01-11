@@ -49,6 +49,14 @@ get_causal_values(pdm)
 sim_data <- sim_mixed_dag(dag_model = pdm, N = 100)
 confint(lm(x2 ~ x1, sim_data))
 
-
-
-
+#
+#W = np.array([[0, 1, 0], [0, 0, 2], [0, 0, 0]])
+#X = np.random.randn(1000, 3).dot(np.linalg.inv(np.eye(3) - W))
+W <- matrix(c(0, 1, 0, 0, 0, 2, 0, 0, 0), nrow = 3, ncol = 3, byrow = TRUE)
+X = matrix(rnorm(1000*3), ncol=3)
+X <- X %*% solve(diag(3) - W)
+sortnregress(X)
+# Python Reference implementation (using BIC)
+# [[0.         1.01499348 0.        ]
+#  [0.         0.         1.96755702]
+#  [0.         0.         0.        ]]

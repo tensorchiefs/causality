@@ -1,5 +1,6 @@
 library(dagitty)
 library(ggdag)
+library(adapt4pv)
 
 # Extract the causal values from the DAG
 get_causal_values <- function(dag_model){
@@ -20,6 +21,42 @@ get_causal_values <- function(dag_model){
   names(val) <- paste0(x_from, " -> ", x_to)
   return(val)
 }
+
+# From: https://github.com/Scriddie/Varsortability/blob/main/src/varsortability.py
+# With a little help from chatGPT
+sortnregress <- function(X) {
+  d <- ncol(X)
+  W <- matrix(0, d, d)
+  increasing <- order(apply(X, 2, var))
+  
+  for (k in 2:d) {
+    covariates <- increasing[1:(k-1)]
+    target <- increasing[k]
+    
+    LR <- lm(X[, target] ~ X[, covariates])
+    weight <- abs(coef(LR)[-1])
+    
+    x=as.matrix(X[, covariates]) * weight
+    if (k == 2){#Add zero column to make glm net work (see Stackoverflow)
+      x = cbind(x, rep(0,length(x)))
+      cv = cv.glmnet(x=x, y=X[,target])
+      opt_la = cv$lambda.min
+      fit = glmnet(x=x, y=X[,target], lambda = opt_la)
+      #LL <- lars(as.matrix(X[, covariates]) * weight, X[, target], type = "lasso")
+      W[covariates, target] <- coef(fit)[2]  * weight
+    } else{
+      cv = cv.glmnet(x=x, y=X[,target])
+      opt_la = cv$lambda.min
+      fit = glmnet(x=x, y=X[,target], lambda = opt_la)
+      #LL <- lars(as.matrix(X[, covariates]) * weight, X[, target], type = "lasso")
+      W[covariates, target] <- coef(fit)[-1] * weight
+    }
+  }
+  
+  return(W)
+}
+
+
 
 # From: https://github.com/Scriddie/Varsortability/blob/main/src/varsortability.py
 # With a little help from chatGPT
