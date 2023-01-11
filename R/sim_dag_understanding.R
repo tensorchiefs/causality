@@ -45,10 +45,13 @@ pdm <- parametric_dag_model(dag,
 pdm = parametric_dag_model(dag)
 get_causal_values(pdm)
 
+
 #Simulation of observables from the parameteric dag model
 sim_data <- sim_mixed_dag(dag_model = pdm, N = 100)
 confint(lm(x2 ~ x1, sim_data))
 
+# test sortnregress
+# Example from rom: https://github.com/Scriddie/Varsortability/blob/main/src/sortnregress.py
 #
 #W = np.array([[0, 1, 0], [0, 0, 2], [0, 0, 0]])
 #X = np.random.randn(1000, 3).dot(np.linalg.inv(np.eye(3) - W))

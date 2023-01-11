@@ -1,6 +1,6 @@
 library(dagitty)
 library(ggdag)
-library(adapt4pv)
+library(glmnet)
 
 # Extract the causal values from the DAG
 get_causal_values <- function(dag_model){
@@ -22,8 +22,9 @@ get_causal_values <- function(dag_model){
   return(val)
 }
 
-# From: https://github.com/Scriddie/Varsortability/blob/main/src/varsortability.py
+# From: https://github.com/Scriddie/Varsortability/blob/main/src/sortnregress.py
 # With a little help from chatGPT
+# We did not use BIC (as in python) but cv to select lambda
 sortnregress <- function(X) {
   d <- ncol(X)
   W <- matrix(0, d, d)
