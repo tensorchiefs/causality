@@ -27,8 +27,12 @@ confint(lm(x3 ~ x2 + x1)) #Adjust for the confounder x1
 library(cmdstanr)
 m_rcmdstan <- cmdstan_model('R/triangle_lin.stan')
 s_rcmdstan = m_rcmdstan$sample(data = list(N=N, x1=x1,x2=x2,x3=x3))
-library(tidybayes)
 s_rcmdstan
+
+m_rcmdstan$optimize(data = list(N=N, x1=x1,x2=x2,x3=x3))
+s_rcmdstan
+
+
 
 
 ##########################
