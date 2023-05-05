@@ -39,3 +39,4 @@ vignettes/*.pdf
 .Renviron
 *.Rproj
 R/hidden_confounder_lin
+.DS_Store

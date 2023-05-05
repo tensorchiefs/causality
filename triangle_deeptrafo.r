@@ -19,6 +19,8 @@ dat <- dgp(42)
 m1 <- ColrNN(x ~ 1, data = dat, order = 10) #Colr --> f_z is dlogis
 m1$model
 m1$model$input
+m1.theta = coef(m1, which_param = 'interacting')
+
 
 #### Calculation of the NLL
 ## It's tricky
@@ -41,6 +43,8 @@ mean(-log(dlogis(fm1[,1]+fm1[,2])*fm1[,4]))
 
 
 m2 <- ColrNN(y ~ x, data = dat)
+m2.theta = coef(m2, which_param = 'interacting')
+
 # fit(m2, epochs = 0)
 # logLik(m2,dat)
 # # [1] -511.9449
@@ -50,6 +54,7 @@ m2 <- ColrNN(y ~ x, data = dat)
 # # 7.0819416 # bigNLL  --> passt
 
 m3 <- ColrNN(z ~ y + x, data = dat)
+m3.theta = coef(m3, which_param = 'interacting')
 
 #Constructs the loss fkt of the combined model
 get_loss <- function(mods) {
@@ -122,17 +127,33 @@ big_mod <- keras_model(inp, out)
 compile(big_mod, loss = get_loss(mods))
 
 ######## mit tf
+bs = basefun::Bernstein_basis(numeric_var("x", support = range(dat$x)), order = 10)
+x.bs = bs(dat$x)
+
+bs = basefun::Bernstein_basis(numeric_var("y", support = range(dat$y)), order = 10)
+y.bs = bs(dat$y)
+
 m1keras = m1$model
-bs = tf$Variable(matrix(runif(22), ncol = 11, nrow = 2), dtype='float32')
-bsz = tf$Variable(matrix(0, ncol = 11, nrow = 2), dtype='float32')
-ia = tf$Variable(matrix(c(0.3,0.3), ncol = 1, nrow = 2), dtype='float32')
+ia = tf$Variable(matrix(c(1), ncol = 1, nrow = 42), dtype='float32')
+ia0 = tf$Variable(matrix(c(0), ncol = 1, nrow = 42), dtype='float32')
 m1$model$input
-i = list(bs,bsz,bsz,ia,ia)
+i = list(x.bs,x.bs,x.bs,ia,ia) 
 m1keras(i)
+fitted(m1)
+
+m2keras = m2$model
+ia = tf$Variable(matrix(c(1), ncol = 1, nrow = 42), dtype='float32')
+ia0 = tf$Variable(matrix(c(0), ncol = 1, nrow = 42), dtype='float32')
+i = list(y.bs,y.bs,y.bs,ia,ia,ia) 
+m2keras(i)
+fitted(m2)
+
+
 
 m1$model$input
 bs.m1 = coef(m1, which_param = 'interacting')
 
+predict(m1, newdata = dat, type='pdf')
 
 library(mlt)
 
