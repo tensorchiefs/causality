@@ -283,6 +283,8 @@ dat.s = dat
 range(dat.s)
 hist(dat.s[,1],50)
 hist(dat.s[,2],50)
+abline(v=0.5, col='red')
+
 #dat.s = apply(dat, 2, utils_scale)
 dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
 
@@ -382,22 +384,70 @@ z_sample = sample_from_target(thetaNN_z, parents_z)
 lines(density(z_sample$numpy()))
 par(mfrow=c(1,1))
 
-####### Root Finding for sampling #####
+####### Sampling #####
+doX = 2.0
+doX_tensor = 0*dat.tf[,1] + doX #set to doX
+## X--> Y
+ys = sample_from_target(thetaNN_l[[2]], doX_tensor)
+target_grid_R = seq(0,1,length.out=length(doX_tensor))
+target_grid = tf$cast(matrix(target_grid_R, ncol=1), tf$float32)
+h = predict_h(thetaNN_l[[2]], doX_tensor, target_grid)
+plot(target_grid_R,h, type='l')
+
+
+h0 = h[1]
+h1 = h[length(target_grid_R)]
+
+
+
+zs = seq(0,1,0.001)
+z = rlogis(1e4)
+hist(z,100)
+plot(zs, dlogis(zs))
+hist(ys$numpy(),100)
+qqPlot(ys$numpy())
+
+parents_z = matrix(c(doX_tensor$numpy(), ys$numpy()), ncol=2)
+#parents_z = tf$concat(list(doX_tensor, ys), axis=1L)
+tmp = sample_from_target(thetaNN_l[[3]], parents_z)
+zs = c(zs, tmp$numpy())
+
+
+
+
+
+
+
 doX_triangle = function(doX){
   zs = NULL 
   for(i in 1:10){
-    parents_x = 0*dat.tf[,1] + doX #set to doX
+    doX_tensor = 0*dat.tf[,1] + doX #set to doX
     ## X--> Y
-    ys = sample_from_target(thetaNN_l[[2]], parents_x)
-    parents = matrix(c(parents_x$numpy(), ys$numpy()), ncol=2)
-    tmp = sample_from_target(thetaNN_l[[3]], parents)
+    ys = sample_from_target(thetaNN_l[[2]], doX_tensor)
+    parents_z = matrix(c(doX_tensor$numpy(), ys$numpy()), ncol=2)
+    #parents_z = tf$concat(list(doX_tensor, ys), axis=1L)
+    tmp = sample_from_target(thetaNN_l[[3]], parents_z)
     zs = c(zs, tmp$numpy())
   }
   return (zs)
 }
 
+z_do_xup = doX_triangle(0.5)
+hist(z_do_xup,100)
+plot(ecdf(z_do_xup))
+summary(z_do_xup)
+library(car)
+qqPlot(z_do_xup)
+
+z_do_down = doX_triangle(0.3)
+hist(z_do_down)
+mean(z_do_xup) - mean(z_do_down)
+median(z_do_xup) - median(z_do_down)
+(0.5 - 0.3*0.25)*0.2
+
+
 #plot of Y|do(x=0.3)
-dox=0.8
+do=0.8
 parents_x = 0*dat.tf[,1] + 1*dox
 #d = sample_from_target(thetaNN_l[[2]], parents_x)
 target_grid_R = seq(0,1,length.out=length(parents_x))
