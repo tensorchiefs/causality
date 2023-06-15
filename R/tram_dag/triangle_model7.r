@@ -8,78 +8,12 @@ library(tfprobability)
 
 source('tram_scm/bern_utils.R')
 source('tram_scm/model_utils.R')
-M = 10
+source('R/tram_dag/utils.R')
+
+
+M = 30
 len_theta = M + 1
 bp = make_bernp(len_theta)
-
-########### Functions ############
-
-calc_NLL = function(nn_theta_tile, parents, target){
-  theta_tilde = nn_theta_tile(parents)
-  theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
-  theta = to_theta(theta_tilde)
-  latent = eval_h(theta, y_i = target, beta_dist_h = bp$beta_dist_h)
-  h_dash = eval_h_dash(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
-  pz = tfd_logistic(loc=0, scale=1)
-  return(
-    -tf$math$reduce_mean(
-    pz$log_prob(latent) + 
-      tf$math$log(h_dash))
-  )
-}
-
-predict_p_target = function(thetaNN, parents, target_grid){
-  theta_tilde = thetaNN(parents)
-  theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
-  theta = to_theta(theta_tilde)
-  latent = eval_h(theta, y_i = target_grid, beta_dist_h = bp$beta_dist_h)
-  h_dash = eval_h_dash(theta, target_grid, beta_dist_h_dash = bp$beta_dist_h_dash)
-  pz = tfd_logistic(loc=0, scale=1)
-  p_target = pz$prob(latent) * h_dash
-  return(p_target)
-}
-
-sample_from_target = function(thetaNN, parents){
-  theta_tilde = thetaNN(parents)
-  theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
-  theta = to_theta(theta_tilde)
-  
-  latent_sample = tfp$distributions$Logistic(loc=0, scale=1)$sample(theta_tilde$shape[1])
-  object_fkt = function(t_i){
-    return(tf$reshape((eval_h(theta, y_i = t_i, beta_dist_h = bp$beta_dist_h) - latent_sample), c(theta_tilde$shape[1],1L)))
-  }
-  target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = 0, high = 1)$estimated_root
-  return(target_sample)
-}
-
-
-make_model = function(len_theta, parent_dim){ 
-  model <- keras_model_sequential() 
-  model %>% 
-    layer_dense(units=(10), input_shape = c(parent_dim), activation = 'tanh') %>% 
-    layer_dense(units=(100), activation = 'tanh') %>% 
-    layer_dense(units=len_theta) %>% 
-    layer_activation('linear') 
-  return (model)
-}
-
-train_step = function(thetaNN, parents, target){
-  optimizer = tf$keras$optimizers$Adam(learning_rate=0.0001)
-  with(tf$GradientTape() %as% tape, {
-    NLL = calc_NLL(thetaNN, parents, target)
-  })
-  #Creating a list for all gradients
-  n = 1
-  tvars = list(thetaNN$trainable_variables) 
-  #Calculation of the gradients
-  grads = tape$gradient(NLL, tvars)
-  for (i in 1:n){
-    optimizer$apply_gradients(
-      purrr::transpose(list(grads[[i]], tvars[[i]]))
-    )  
-  }
-  return(NLL)
-}
 
 #### Testing with geysir ####
 if (FALSE){
@@ -98,7 +32,7 @@ if (FALSE){
       print(l)
     }
   }
-  plot(loss, xlim=c(0,1e4), ylim=c(-0.10,0.1))
+  plot(loss, xlim=c(0,1e4), ylim=c(-0.6,0.1))
   ys = seq(0,1,length.out=length(geyser$waiting))
   target_grid = tf$cast(matrix(ys, ncol=1), tf$float32)
   ps = predict_p_target(thetaNN, parents = parents, target_grid = target_grid)
@@ -135,8 +69,6 @@ if (FALSE){
   
   h_dash = eval_h_dash(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
   pz = tfd_logistic(loc=0, scale=1)
-  
-  
 }
 
 
@@ -362,22 +294,25 @@ calc_NLL(thetaNN_x, parents_x, target_x)
 thetaNN_y = make_model(len_theta, 1)
 parents_y = dat.tf[,1]
 target_y = dat.tf[,2, drop=FALSE]
+calc_NLL(thetaNN_y, parents_y, target_y)
 
 thetaNN_z = make_model(len_theta, parent_dim = 2)
 parents_z = dat.tf[,c(1,2)]
 target_z = dat.tf[,3, drop=FALSE]
+calc_NLL(thetaNN_z, parents_z, target_z)
+
 
 thetaNN_l = list(thetaNN_x, thetaNN_y, thetaNN_z)
 parents_l = list(parents_x, parents_y, parents_z)
 target_l = list(target_x, target_y, target_z)
 
 train_step = function(thetaNN_l, parents_l, target_l){
-  optimizer = tf$keras$optimizers$Adam(learning_rate=0.001)
+  optimizer = tf$keras$optimizers$Adam(learning_rate=0.0001)
   with(tf$GradientTape() %as% tape, {
-    NLL = 
-      calc_NLL(thetaNN_l[[1]], parents_l[[1]], target_l[[1]]) +
-      calc_NLL(thetaNN_l[[2]], parents_l[[2]], target_l[[2]]) +
-      calc_NLL(thetaNN_l[[3]], parents_l[[3]], target_l[[3]]) 
+    NLL1 = calc_NLL(thetaNN_l[[1]], parents_l[[1]], target_l[[1]])
+    NLL2 = calc_NLL(thetaNN_l[[2]], parents_l[[2]], target_l[[2]]) 
+    NLL3 = calc_NLL(thetaNN_l[[3]], parents_l[[3]], target_l[[3]]) 
+    NLL = NLL1 + NLL2 + NLL3
   })
   #Creating a list for all gradients
   n = 3
@@ -393,26 +328,59 @@ train_step = function(thetaNN_l, parents_l, target_l){
       purrr::transpose(list(grads[[i]], tvars[[i]]))
     )  
   }
-  return(NLL)
+  return(list(NLL=NLL, NLL1 = NLL1, NLL2 = NLL2, NLL3 = NLL3))
 }
 
-epochs = 1e4
+
+epochs = 500
 loss = rep(NA, epochs)
+loss1 = rep(NA, epochs)
+loss2 = rep(NA, epochs)
+loss3 = rep(NA, epochs)
+
 for (e in 1:epochs){
   l = train_step(thetaNN_l, parents_l, target_l)
-  loss[e] = l$numpy()
+  loss[e]  = l$NLL$numpy()
+  loss1[e] = l$NLL1$numpy()
+  loss2[e] = l$NLL2$numpy()
+  loss3[e] = l$NLL3$numpy()
   if (e %% 10 == 0) {
     print(e)
     print(l)
   }
 }
-plot(loss[1000:length(loss)])
-hist(dat.s[,1], freq = FALSE)
+plot(loss, type='l')
+plot(loss1, col='red', xlim=c(0,200), type='l')
+plot(loss2, col='green', xlim=c(0,200), type='l')
+plot(loss3, col='blue', xlim=c(0,200), type='l')
+
+
+par(mfrow=c(2,2))
+plot(loss, type='l')
+### Distribution for X
+hist(dat.s[,1], freq = FALSE,100, main='X')
 parents_x = 0*dat.tf[,1] + 1
 target_grid_R = seq(0,1,length.out=length(parents_x))
 target_grid = tf$cast(matrix(target_grid_R, ncol=1), tf$float32)
-py = predict_p_target(thetaNN_l[[1]], parents = parents_x, target_grid = target_grid)
-lines(target_grid_R, py)
+px = predict_p_target(thetaNN_l[[1]], parents = parents_x, target_grid = target_grid)
+lines(target_grid_R, px, col='red')
+x_samples = sample_from_target(thetaNN_x, parents_x)
+lines(density(x_samples$numpy()), col='green')
+
+### Marginal Distribution for Y
+hist(dat.s[,2], freq = FALSE,100)
+parents_y = x_samples
+#py = predict_p_target(thetaNN_l[[2]], parents = parents_y, target_grid = target_grid)
+#lines(target_grid_R, py)
+y_samples = sample_from_target(thetaNN_y, parents_y)
+lines(density(y_samples$numpy()))
+
+### Marginal Distribution for Z
+hist(dat.s[,3], freq = FALSE,100)
+parents_z = tf$concat(list(x_samples, y_samples), axis=1L)
+z_sample = sample_from_target(thetaNN_z, parents_z)
+lines(density(z_sample$numpy()))
+par(mfrow=c(1,1))
 
 ####### Root Finding for sampling #####
 doX_triangle = function(doX){
