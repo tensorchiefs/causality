@@ -40,6 +40,10 @@ sample_from_target = function(thetaNN, parents){
   theta = to_theta(theta_tilde)
   
   latent_sample = tfp$distributions$Logistic(loc=0, scale=1)$sample(theta_tilde$shape[1])
+  #DELETE
+  object_fkt = function(t_i){
+    return(tf$reshape((eval_h(theta, y_i = t_i, beta_dist_h = bp$beta_dist_h) - latent_sample), c(2,1L)))
+  }
   object_fkt = function(t_i){
     return(tf$reshape((eval_h(theta, y_i = t_i, beta_dist_h = bp$beta_dist_h) - latent_sample), c(theta_tilde$shape[1],1L)))
   }

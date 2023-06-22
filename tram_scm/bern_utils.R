@@ -33,6 +33,36 @@ eval_h = function(theta_im, y_i, beta_dist_h){
   return (tf$reduce_mean(f_im * theta_im, axis=1L))
 }
 
+eval_h_extra <- function(theta_im, y_i, beta_dist_h, beta_dist_h_dash) {
+  
+  R_START = 0.6 #1.0-1E-1
+  L_START = 0.4
+  # Compute the coefficients of the linear extrapolation (for y_i < 0)
+  slope0 <- eval_h_dash(theta_im, L_START, beta_dist_h_dash)
+  b0 <- eval_h(theta_im, L_START, beta_dist_h)
+  # If y_i < 0, use a linear extrapolation
+  mask0 <- tf$math$less(y_i, L_START)
+  y_i <- tf$where(mask0, slope0 * (y_i - L_START) + b0, y_i)
+  
+  #(for y_i > 1)
+  b1 <- eval_h(theta_im, R_START, beta_dist_h)
+  slope1 <- eval_h_dash(theta_im, R_START, beta_dist_h_dash)
+  print(slope1)
+  
+  # If y_i > 1, use a linear extrapolation
+  mask1 <- tf$math$greater(y_i, R_START)
+  y_i <- tf$where(mask1, slope1 * (y_i - R_START) + b1, y_i)
+  
+  # For values in between, use the original function
+  mask <- tf$math$logical_and(tf$math$greater_equal(y_i, L_START), tf$math$less_equal(y_i, R_START))
+  f_im <- tf$where(mask, beta_dist_h$prob(y_i), y_i)
+  
+  # Return the mean value
+  return(tf$reduce_mean(f_im * theta_im, axis=1L))
+}
+
+
+
 eval_h_dash = function(theta, y, beta_dist_h_dash){
   y = tf$clip_by_value(y,1E-5, 1.0-1E-5)
   by = beta_dist_h_dash$prob(y) 
@@ -225,13 +255,35 @@ bernp.p_y_h = function(bernp, out_row, from, to, length.out, out_eta = NULL){
 
 
 
-if (FALSE){
-  d = bernp(3)
-  print(d)
-  out = 4 #TODO replace if the output of the network
-  p_y(d, 4)
-  d$len_theta
-  d$beta_dist_h
+if (TRUE){
+  #print(d)
+  #out = 4 #TODO replace if the output of the network
+  #p_y(d, 4)
+  #d$len_theta
+  #d$beta_dist_h
+  library(tfprobability)
+  
+  d = bernp(4)
+  # Test input data
+  ys = seq(-1,2,0.05)
+  h = NA*ys
+  hextra = h 
+  hdash = h
+  for (i in 1:length(ys)){
+    theta_im <- tf$constant(c(-0.1, 0.2, 0.34, 0.4), shape=c(1L,4L))
+    y_i <- tf$constant(ys[i], shape=c(1L,1L))
+    # Call eval_h_inter function
+    h[i] = eval_h(theta_im, y_i, d$beta_dist_h)$numpy()
+    hdash[i] = eval_h_dash(theta_im, y_i, d$beta_dist_h_dash)$numpy()
+    hextra[i]=eval_h_extra(theta_im, y_i, d$beta_dist_h, d$beta_dist_h_dash)$numpy()
+  }
+  plot(ys, h, ylim=c(-0.6,1.61), type='l')
+  lines(ys, hextra, col='red', lty=2)
+  #lines(ys, hdash, col='pink', lty=2)
+  
+  d$beta_dist_h$prob(y_i)
+  eval_h
+  
 }
 
 

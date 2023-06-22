@@ -61,6 +61,10 @@ if (FALSE){
   res = tfp$math$find_root_chandrupatla(object_fkt, low = 0, high = 1)
   hist(res$estimated_root$numpy())
   
+  
+  
+  
+  
   y_i = tf$Variable(matrix(0.5636344, nrow=1,ncol=1), dtype=tf$float32)
   eval_h(theta, y_i = y_i, beta_dist_h = bp$beta_dist_h)
   
@@ -340,17 +344,29 @@ loss1 = rep(NA, epochs)
 loss2 = rep(NA, epochs)
 loss3 = rep(NA, epochs)
 
-for (e in 1:epochs){
-  l = train_step(thetaNN_l, parents_l, target_l)
-  loss[e]  = l$NLL$numpy()
-  loss1[e] = l$NLL1$numpy()
-  loss2[e] = l$NLL2$numpy()
-  loss3[e] = l$NLL3$numpy()
-  if (e %% 10 == 0) {
-    print(e)
-    print(l)
-  }
+if(FALSE){
+  for (e in 1:epochs){
+    l = train_step(thetaNN_l, parents_l, target_l)
+    loss[e]  = l$NLL$numpy()
+    loss1[e] = l$NLL1$numpy()
+    loss2[e] = l$NLL2$numpy()
+    loss3[e] = l$NLL3$numpy()
+    if (e %% 10 == 0) {
+      print(e)
+      print(l)
+      }
+    }
+    # Saving weights after training
+    thetaNN_l[[1]]$save_weights(paste0("R/tram_dag/triangle_model1_weights.h5"))
+    thetaNN_l[[2]]$save_weights(paste0("R/tram_dag/triangle_model2_weights.h5"))
+    thetaNN_l[[3]]$save_weights(paste0("R/tram_dag/triangle_model3_weights.h5"))
+} else{
+  thetaNN_l[[1]]$load_weights("R/tram_dag/triangle_model1_weights.h5")
+  thetaNN_l[[2]]$load_weights("R/tram_dag/triangle_model2_weights.h5")
+  thetaNN_l[[3]]$load_weights("R/tram_dag/triangle_model3_weights.h5")
 }
+
+
 plot(loss, type='l')
 plot(loss1, col='red', xlim=c(0,200), type='l')
 plot(loss2, col='green', xlim=c(0,200), type='l')
@@ -393,19 +409,19 @@ target_grid_R = seq(0,1,length.out=length(doX_tensor))
 target_grid = tf$cast(matrix(target_grid_R, ncol=1), tf$float32)
 h = predict_h(thetaNN_l[[2]], doX_tensor, target_grid)
 plot(target_grid_R,h, type='l')
-
-
-h0 = h[1]
-h1 = h[length(target_grid_R)]
-
-
-
-zs = seq(0,1,0.001)
-z = rlogis(1e4)
-hist(z,100)
-plot(zs, dlogis(zs))
 hist(ys$numpy(),100)
 qqPlot(ys$numpy())
+
+h0 = h[1] 
+h1 = h[length(target_grid_R)]
+
+hist(rlogis(1e4),100, freq = FALSE)
+sd(rlogis(1e4))
+eps_s = seq(-5,5,0.001)
+lines(eps_s, dlogis(eps_s), col='red')
+lines(eps_s, dnorm(eps_s), col='green')
+
+
 
 parents_z = matrix(c(doX_tensor$numpy(), ys$numpy()), ncol=2)
 #parents_z = tf$concat(list(doX_tensor, ys), axis=1L)
