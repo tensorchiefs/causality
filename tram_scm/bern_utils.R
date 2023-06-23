@@ -39,15 +39,15 @@ eval_h_extra <- function(theta_im, y_i, beta_dist_h, beta_dist_h_dash) {
   L_START = 0.0001
   
   # for y_i < 0 extrapolate with tangent at h(0)
-  slope0 <- eval_h_dash(theta_im, L_START, beta_dist_h_dash)
-  b0 <- eval_h(theta_im, L_START, beta_dist_h)
+  slope0 <- tf$expand_dims(eval_h_dash(theta_im, L_START, beta_dist_h_dash), axis=1L)
+  b0 <- tf$expand_dims(eval_h(theta_im, L_START, beta_dist_h),1L)
   # If y_i < 0, use a linear extrapolation
   mask0 <- tf$math$less(y_i, L_START)
   h <- tf$where(mask0, slope0 * (y_i - L_START) + b0, y_i)
   
   #(for y_i > 1)
-  b1 <- eval_h(theta_im, R_START, beta_dist_h)
-  slope1 <- eval_h_dash(theta_im, R_START, beta_dist_h_dash)
+  b1 <- tf$expand_dims(eval_h(theta_im, R_START, beta_dist_h),1L)
+  slope1 <- tf$expand_dims(eval_h_dash(theta_im, R_START, beta_dist_h_dash), axis=1L)
   # If y_i > 1, use a linear extrapolation
   mask1 <- tf$math$greater(y_i, R_START)
   h <- tf$where(mask1, slope1 * (y_i - R_START) + b1, h)
@@ -269,19 +269,23 @@ if (FALSE){
   hextra = h 
   hdash = h
   for (i in 1:length(ys)){
-    theta_im <- tf$constant(c(-0.1, 0.2, 0.34, 0.4), shape=c(1L,4L))
+    theta_im <- tf$constant(c(-0.1, 12.2, 22.34, 122.4), shape=c(1L,4L))
     y_i <- tf$constant(ys[i], shape=c(1L,1L))
     # Call eval_h_inter function
     h[i] = eval_h(theta_im, y_i, d$beta_dist_h)$numpy()
     hdash[i] = eval_h_dash(theta_im, y_i, d$beta_dist_h_dash)$numpy()
     hextra[i]=eval_h_extra(theta_im, y_i, d$beta_dist_h, d$beta_dist_h_dash)$numpy()
   }
-  plot(ys, h, ylim=c(-0.6,1.61), type='l')
-  lines(ys, hextra, col='red', lty=2)
+  plot(ys, hextra, col='red', lty=2, type='l')
+  lines(ys, h,  type='l')
   #lines(ys, hdash, col='pink', lty=2)
   
   d$beta_dist_h$prob(y_i)
   eval_h
+  
+  y_i <- tf$constant(c(0.1,1.01), shape=c(2L,1L))
+  eval_h(theta_im, y_i, d$beta_dist_h)
+  eval_h_extra(theta_im, y_i, d$beta_dist_h, d$beta_dist_h_dash)
   
 }
 

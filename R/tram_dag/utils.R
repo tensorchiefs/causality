@@ -1,12 +1,13 @@
 ########### Functions ############
 
+#TODO change to eval_h extra (for evaluation of testset and maybe training)
 calc_NLL = function(nn_theta_tile, parents, target){
   theta_tilde = nn_theta_tile(parents)
   theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
   theta = to_theta(theta_tilde)
   latent = eval_h(theta, y_i = target, beta_dist_h = bp$beta_dist_h)
   h_dash = eval_h_dash(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
-  pz = tfd_logistic(loc=0, scale=1)
+  pz = latent_dist
   return(
     -tf$math$reduce_mean(
       pz$log_prob(latent) + 
@@ -14,13 +15,14 @@ calc_NLL = function(nn_theta_tile, parents, target){
   )
 }
 
+#TODO change to eval_h extra
 predict_p_target = function(thetaNN, parents, target_grid){
   theta_tilde = thetaNN(parents)
   theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
   theta = to_theta(theta_tilde)
   latent = eval_h(theta, y_i = target_grid, beta_dist_h = bp$beta_dist_h)
   h_dash = eval_h_dash(theta, target_grid, beta_dist_h_dash = bp$beta_dist_h_dash)
-  pz = tfd_logistic(loc=0, scale=1)
+  pz = latent_dist
   p_target = pz$prob(latent) * h_dash
   return(p_target)
 }
@@ -29,7 +31,7 @@ predict_h = function(thetaNN, parents, target_grid){
   theta_tilde = thetaNN(parents)
   theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
   theta = to_theta(theta_tilde)
-  latent = eval_h(theta, y_i = target_grid, beta_dist_h = bp$beta_dist_h)
+  latent = eval_h_extra(theta, y_i = target_grid, beta_dist_h = bp$beta_dist_h, beta_dist_h_dash= bp$beta_dist_h_dash)
   return(latent)
 }
 
@@ -38,16 +40,35 @@ sample_from_target = function(thetaNN, parents){
   theta_tilde = thetaNN(parents)
   theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
   theta = to_theta(theta_tilde)
+  h_0 =  tf$expand_dims(eval_h(theta, 0, beta_dist_h = bp$beta_dist_h), axis=1L)
+  h_1 = tf$expand_dims(eval_h(theta, 1, beta_dist_h = bp$beta_dist_h), axis=1L)
+  latent_sample = latent_dist$sample(theta_tilde$shape[1])
   
-  latent_sample = tfp$distributions$Logistic(loc=0, scale=1)$sample(theta_tilde$shape[1])
-  #DELETE
+  #  object_fkt = function(t_i){
+  #     return(tf$reshape((eval_h(theta, y_i = t_i, beta_dist_h = bp$beta_dist_h) - latent_sample), c(theta_tilde$shape[1],1L)))
+  # }
+  # shape = tf$shape(parents)[1]
+  # target_sample1 = tfp$math$find_root_chandrupatla(object_fkt, low = 0, high = 1)$estimated_root
+  # target_sample1
+  
   object_fkt = function(t_i){
-    return(tf$reshape((eval_h(theta, y_i = t_i, beta_dist_h = bp$beta_dist_h) - latent_sample), c(2,1L)))
+    return(tf$reshape((eval_h_extra(theta, y_i = t_i, beta_dist_h = bp$beta_dist_h,beta_dist_h_dash = bp$beta_dist_h_dash) - latent_sample), c(theta_tilde$shape[1],1L)))
   }
-  object_fkt = function(t_i){
-    return(tf$reshape((eval_h(theta, y_i = t_i, beta_dist_h = bp$beta_dist_h) - latent_sample), c(theta_tilde$shape[1],1L)))
-  }
-  target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = 0, high = 1)$estimated_root
+  shape = tf$shape(parents)[1]
+  #target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = -1E5*tf$ones(c(shape,1L)), high = 1E5*tf$ones(c(shape,1L)))$estimated_root
+  target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = h_0, high = h_1)$estimated_root
+  
+  # Manuly calculating the inverse for the extrapolated samples
+  l = tf$expand_dims(latent_sample, 1L)
+  mask <- tf$math$less_equal(l, h_0)
+  #tf$where(mask, beta_dist_h$prob(y_i)* theta_im, h)
+  slope0 <- tf$expand_dims(eval_h_dash(theta, 0., bp$beta_dist_h_dash), axis=1L)
+  target_sample = tf$where(mask, (l-h_0)/slope0, target_sample)
+  
+  mask <- tf$math$greater_equal(l, h_1)
+  #tf$where(mask, beta_dist_h$prob(y_i)* theta_im, h)
+  slope1<- tf$expand_dims(eval_h_dash(theta, 1., bp$beta_dist_h_dash), axis=1L)
+  target_sample = tf$where(mask, (l-h_1)/slope1 + 1.0, target_sample)
   return(target_sample)
 }
 
