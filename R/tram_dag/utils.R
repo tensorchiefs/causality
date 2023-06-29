@@ -1,4 +1,42 @@
+##################################
+##### Utils for tram_dag #########
+library(mlt)
+library(tram)
+library(MASS)
+library(tensorflow)
+library(keras)
+library(tidyverse)
+library(tfprobability)
+
+source('tram_scm/bern_utils.R')
+source('tram_scm/model_utils.R')
+
 ########### Functions ############
+train_step = function(thetaNN_l, parents_l, target_l, optimizer){
+  n = length(thetaNN_l)
+  
+  with(tf$GradientTape() %as% tape, {
+    NLL = 0  # Initialize NLL
+    for(i in 1:n) { # Assuming that thetaNN_l, parents_l and target_l have the same length
+      NLL = NLL + calc_NLL(thetaNN_l[[i]], parents_l[[i]], target_l[[i]])
+    }
+  })
+  
+  tvars = list()
+  for(i in 1:n) {
+    tvars[[i]] = thetaNN_l[[i]]$trainable_variables
+  }
+  
+  #Calculation of the gradients
+  grads = tape$gradient(NLL, tvars)
+  for (i in 1:n){
+    optimizer$apply_gradients(
+      purrr::transpose(list(grads[[i]], tvars[[i]]))
+    )  
+  }
+  return(list(NLL=NLL))
+}
+
 
 #TODO change to eval_h extra (for evaluation of testset and maybe training)
 calc_NLL = function(nn_theta_tile, parents, target){

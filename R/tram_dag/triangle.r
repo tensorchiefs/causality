@@ -59,54 +59,14 @@ parents_l = list(parents_x, parents_y, parents_z)
 target_l = list(target_x, target_y, target_z)
 
 ###### Training Step #####
-train_step = function(thetaNN_l, parents_l, target_l){
-  optimizer = tf$keras$optimizers$Adam(learning_rate=0.0001)
-  n = length(thetaNN_l)
-  
-  with(tf$GradientTape() %as% tape, {
-    NLL = 0  # Initialize NLL
-    for(i in 1:n) { # Assuming that thetaNN_l, parents_l and target_l have the same length
-      NLL = NLL + calc_NLL(thetaNN_l[[i]], parents_l[[i]], target_l[[i]])
-    }
-  })
-  
-  #Creating a list for all gradients
-  #n = 3
-  #tvars = list(
-  #  thetaNN_l[[1]]$trainable_variables,
-  #  thetaNN_l[[2]]$trainable_variables,
-  #  thetaNN_l[[3]]$trainable_variables
-  #) 
-  
-  tvars = list()
-  for(i in 1:n) {
-    tvars[[i]] = thetaNN_l[[i]]$trainable_variables
-  }
-  
-  #Calculation of the gradients
-  grads = tape$gradient(NLL, tvars)
-  for (i in 1:n){
-    optimizer$apply_gradients(
-      purrr::transpose(list(grads[[i]], tvars[[i]]))
-    )  
-  }
-  return(list(NLL=NLL))
-}
-
-
 epochs = 1000
 loss = rep(NA, epochs)
-loss1 = rep(NA, epochs)
-loss2 = rep(NA, epochs)
-loss3 = rep(NA, epochs)
+optimizer = tf$keras$optimizers$Adam(learning_rate=0.001)
 
 if(FALSE){
   for (e in 1:epochs){
-    l = train_step(thetaNN_l, parents_l, target_l)
+    l = train_step(thetaNN_l, parents_l, target_l, optimizer=optimizer)
     loss[e]  = l$NLL$numpy()
-    #loss1[e] = l$NLL1$numpy()
-    #loss2[e] = l$NLL2$numpy()
-    #loss3[e] = l$NLL3$numpy()
     if (e %% 10 == 0) {
       print(e)
       print(l)
@@ -117,16 +77,11 @@ if(FALSE){
     thetaNN_l[[2]]$save_weights(paste0("R/tram_dag/triangle_model2_weights.h5"))
     thetaNN_l[[3]]$save_weights(paste0("R/tram_dag/triangle_model3_weights.h5"))
     plot(loss, type='l')
-    #plot(loss1, col='red', type='l')
-    #plot(loss2, col='green', type='l')
-    #plot(loss3, col='blue', type='l')
 } else{
   thetaNN_l[[1]]$load_weights("R/tram_dag/triangle_model1_weights_logis.h5")
   thetaNN_l[[2]]$load_weights("R/tram_dag/triangle_model2_weights_logis.h5")
   thetaNN_l[[3]]$load_weights("R/tram_dag/triangle_model3_weights_logis.h5")
 }
-
-
 
 
 ### Distribution for X
