@@ -110,6 +110,21 @@ sample_from_target = function(thetaNN, parents){
   return(target_sample)
 }
 
+unscale = function(dat_train_orig, dat_scaled){
+  # Get original min and max
+  orig_min = tf$reduce_min(dat_train_orig, axis=0L)
+  orig_max = tf$reduce_max(dat_train_orig, axis=0L)
+  dat_scaledtf = tf$constant(as.matrix(dat_scaled), dtype = 'float32')
+  # Reverse the scaling
+  return(dat_scaledtf * (orig_max - orig_min) + orig_min)
+}
+
+scale_df = function(dat_tf){
+  dat_min = tf$reduce_min(dat_tf, axis=0L)
+  dat_max = tf$reduce_max(dat_tf, axis=0L)
+  dat_scaled = (dat_tf - dat_min) / (dat_max - dat_min)
+}
+
 
 make_model = function(len_theta, parent_dim){ 
   model <- keras_model_sequential() 
@@ -121,7 +136,7 @@ make_model = function(len_theta, parent_dim){
   return (model)
 }
 
-train_step = function(thetaNN, parents, target){
+train_step_old = function(thetaNN, parents, target){
   optimizer = tf$keras$optimizers$Adam(learning_rate=0.0001)
   with(tf$GradientTape() %as% tape, {
     NLL = calc_NLL(thetaNN, parents, target)
