@@ -133,7 +133,7 @@ hist(z,100)
 
 ############################### Do X ########################
 #Samples from Z give X=doX
-doX_Chain = function(doX, rep=1){
+doX_triangle = function(doX, rep=1){
   zs = NULL 
   for(i in 1:rep){
     doX_tensor = tf$expand_dims(0*dat.tf[,1] + doX,1L) #set to doX
@@ -148,8 +148,8 @@ doX_Chain = function(doX, rep=1){
 
 
 
-dat_do_xup = unscale(dat.tf_u, doX_Chain(doX=0.75))$numpy()
-dat_do_xdown = unscale(dat.tf_u, doX_Chain(doX=0.25))$numpy()
+dat_do_xup = unscale(dat.tf_u, doX_triangle(doX=0.75))$numpy()
+dat_do_xdown = unscale(dat.tf_u, doX_triangle(doX=0.25))$numpy()
 
 x_0 = dat_do_xdown[1,1]
 x_1 = dat_do_xup[1,1]
