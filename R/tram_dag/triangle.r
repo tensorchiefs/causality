@@ -1,4 +1,5 @@
 source('R/tram_dag/utils.R')
+library(R.utils)
 #######################
 # Latent Distribution
 latent_dist = tfd_logistic(loc=0, scale=1)
@@ -45,7 +46,6 @@ dgp <- function(n) {
 dat.tf_u <- dgp(50000)
 dat.tf = scale_df(dat.tf_u)
 
-
 ##### Creation of deep transformation models ######
 # We need on for each variable in the SCM
 thetaNN_x = make_model(len_theta, 1)
@@ -88,34 +88,29 @@ if(FALSE){
     thetaNN_l[[3]]$save_weights(paste0("R/tram_dag/triangle_model3_weights_scaled.h5"))
     plot(loss, type='l')
 } else{
-  thetaNN_l[[1]]$load_weights("R/tram_dag/triangle_model1_weights_logis.h5")
-  thetaNN_l[[2]]$load_weights("R/tram_dag/triangle_model2_weights_logis.h5")
-  thetaNN_l[[3]]$load_weights("R/tram_dag/triangle_model3_weights_logis.h5")
+  thetaNN_l[[1]]$load_weights("R/tram_dag/triangle_model1_weights_scaled.h5")
+  thetaNN_l[[2]]$load_weights("R/tram_dag/triangle_model2_weights_scaled.h5")
+  thetaNN_l[[3]]$load_weights("R/tram_dag/triangle_model3_weights_scaled.h5")
 }
 
 #######################
 # Below ad-hoc evaluation
 
-### Distribution for X
-hist(dat.s[,1], freq = FALSE,100, main='X (Observed Data)')
 parents_x = 0*dat.tf[,1] + 1 #We use 
-
-#Evaluation via p(x) and 
-target_grid_R = seq(0,1,length.out=length(parents_x))
-target_grid = tf$cast(matrix(target_grid_R, ncol=1), tf$float32)
-px = predict_p_target(thetaNN_l[[1]], parents = parents_x, target_grid = target_grid)
-lines(target_grid_R, px, col='red') 
 
 #Evaluation via sampling
 x_samples = sample_from_target(thetaNN_x, parents_x)
+mean(x_samples$numpy() < 0)
+hist(dat.tf$numpy()[,1], freq = FALSE,100)
 lines(density(x_samples$numpy()), col='green')
 #hist(x_samples$numpy(), freq=FALSE,10000,xlim = c(0,1))
 
 ### Distribution for Y
 ### Marginal Distribution for Y
-hist(dat.s[,2], freq = FALSE,100)
+hist(dat.tf$numpy()[,2], freq = FALSE,100)
 parents_y = x_samples
 y_samples = sample_from_target(thetaNN_y, parents_y)
+mean(y_samples$numpy() < 0)
 lines(density(y_samples$numpy()),col='green')
 summary(y_samples$numpy())
 quantile(y_samples$numpy(), seq(0,0.1,0.005)) #Approx 1% smaler 0
@@ -133,17 +128,13 @@ hist(z,100)
 
 ############################### Do X ########################
 #Samples from Z give X=doX
-doX_triangle = function(doX, rep=1){
-  zs = NULL 
-  for(i in 1:rep){
+doX_triangle = function(doX){
     doX_tensor = tf$expand_dims(0*dat.tf[,1] + doX,1L) #set to doX
     ## X--> Y
     ys = sample_from_target(thetaNN_l[[2]], doX_tensor)
     parents_z = tf$concat(list(doX_tensor, ys), axis=1L)
-    tmp = sample_from_target(thetaNN_l[[3]], parents_z)
-    zs = matrix(c(doX_tensor$numpy(),ys$numpy(), tmp$numpy()), ncol=3)
-  }
-  return (zs)
+    zs = sample_from_target(thetaNN_l[[3]], parents_z)
+    return(matrix(c(doX_tensor$numpy(),ys$numpy(), zs$numpy()), ncol=3))
 }
 
 

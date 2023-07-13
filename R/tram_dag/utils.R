@@ -99,6 +99,9 @@ sample_from_target = function(thetaNN, parents){
   # Manuly calculating the inverse for the extrapolated samples
   l = tf$expand_dims(latent_sample, 1L)
   mask <- tf$math$less_equal(l, h_0)
+  printf('~~~ sample_from_target  Fraction of extrapolated samples < 0 : %f \n', tf$reduce_mean(tf$cast(mask, tf$float32)))
+  
+  
   #tf$where(mask, beta_dist_h$prob(y_i)* theta_im, h)
   slope0 <- tf$expand_dims(eval_h_dash(theta, 0., bp$beta_dist_h_dash), axis=1L)
   target_sample = tf$where(mask, (l-h_0)/slope0, target_sample)
@@ -107,6 +110,7 @@ sample_from_target = function(thetaNN, parents){
   #tf$where(mask, beta_dist_h$prob(y_i)* theta_im, h)
   slope1<- tf$expand_dims(eval_h_dash(theta, 1., bp$beta_dist_h_dash), axis=1L)
   target_sample = tf$where(mask, (l-h_1)/slope1 + 1.0, target_sample)
+  printf('sample_from_target Fraction of extrapolated samples > 1 : %f \n', tf$reduce_mean(tf$cast(mask, tf$float32)))
   return(target_sample)
 }
 
@@ -134,22 +138,4 @@ make_model = function(len_theta, parent_dim){
     layer_dense(units=len_theta) %>% 
     layer_activation('linear') 
   return (model)
-}
-
-train_step_old = function(thetaNN, parents, target){
-  optimizer = tf$keras$optimizers$Adam(learning_rate=0.0001)
-  with(tf$GradientTape() %as% tape, {
-    NLL = calc_NLL(thetaNN, parents, target)
-  })
-  #Creating a list for all gradients
-  n = 1
-  tvars = list(thetaNN$trainable_variables) 
-  #Calculation of the gradients
-  grads = tape$gradient(NLL, tvars)
-  for (i in 1:n){
-    optimizer$apply_gradients(
-      purrr::transpose(list(grads[[i]], tvars[[i]]))
-    )  
-  }
-  return(NLL)
 }
