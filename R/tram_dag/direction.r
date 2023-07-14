@@ -1,6 +1,6 @@
 source('R/tram_dag/utils.R')
+DEBUG = FALSE
 library(R.utils)
-DEBUG=FALSE
 #######################
 # Latent Distribution
 latent_dist = tfd_logistic(loc=0, scale=1)
@@ -8,7 +8,7 @@ latent_dist = tfd_logistic(loc=0, scale=1)
 #latent_dist = tfd_truncated_normal(loc=0., scale=1.,low=-4,high = 4)
 hist(latent_dist$sample(1e5)$numpy(),100, freq = FALSE, main='Samples from Latent')
 
-M = 30
+M = 2
 len_theta = M + 1
 bp = make_bernp(len_theta)
 
@@ -19,9 +19,8 @@ bp = make_bernp(len_theta)
 #See eqs. 32-35
 dgp <- function(n) {
   x <- rnorm(n, 0, 1)
-  y <- 10 * x - rnorm(n, 0, 1) 
-  z <- 0.25 * y + 2*rnorm(n, 0, 1) 
-  dat.s =  data.frame(x = x, y = y, z = z)
+  y <- 1.42 * x + 0.42 + rnorm(n, 0, 1) 
+  dat.s =  data.frame(x = x, y = y)
   dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
   return(dat.tf)
 } 
@@ -32,33 +31,52 @@ dat.tf = scale_df(dat.tf_u)
 
 #Ploting
 dat.s = as.matrix(dat.tf$numpy())
-range(dat.s[,3])
+range(dat.s[,1])
 hist(dat.s[,1],50)
-hist(dat.s[,3],50)
+hist(dat.s[,2],50)
 
 
 ##### Creation of deep transformation models ######
-# We need on for each variable in the SCM
-thetaNN_x = make_model(len_theta, 1)
-parents_x = 0*dat.tf[,1] + 1 #set to 1
-target_x = dat.tf[,1, drop=FALSE]
-calc_NLL(thetaNN_x, parents_x, target_x)
+if(TRUE)
+{
+  ### M_true X--> Y
+  # We need on for each variable in the SCM
+  thetaNN_x = make_model(len_theta, 1)
+  parents_x = 0*dat.tf[,1] + 1 #set to 1
+  
+  target_x = dat.tf[,1, drop=FALSE]
+  #target_x = dat.tf[,2, drop=FALSE] #Wrong
+  calc_NLL(thetaNN_x, parents_x, target_x)
+  
+  thetaNN_y = make_model(len_theta, 1)
+  parents_y = dat.tf[,1]
+  
+  target_y = dat.tf[,2, drop=FALSE]
+  #target_y = dat.tf[,1, drop=FALSE] #Wrong
+  
+  ####### This needs to be created ##########
+  thetaNN_l = list(thetaNN_x, thetaNN_y)
+  parents_l = list(parents_x, parents_y)
+  target_l = list(target_x, target_y)
+} else{
+  ### M_false Y--> X
+  # We need on for each variable in the SCM
+  thetaNN_x = make_model(len_theta, 1)
+  parents_x = dat.tf[,2]
+  target_x = dat.tf[,1, drop=FALSE]
+  
+  thetaNN_y = make_model(len_theta, 1)
+  parents_y =  0*dat.tf[,2] + 1 #set to 1
+  target_y = dat.tf[,2, drop=FALSE]
 
-thetaNN_y = make_model(len_theta, 1)
-parents_y = dat.tf[,1]
-target_y = dat.tf[,2, drop=FALSE]
-
-thetaNN_z = make_model(len_theta, 1)
-parents_z = dat.tf[,2]
-target_z = dat.tf[,3, drop=FALSE]
-
-####### This needs to be created ##########
-thetaNN_l = list(thetaNN_x, thetaNN_y, thetaNN_z)
-parents_l = list(parents_x, parents_y, parents_z)
-target_l = list(target_x, target_y, target_z)
+  ####### This needs to be created ##########
+  thetaNN_l = list(thetaNN_x, thetaNN_y)
+  parents_l = list(parents_x, parents_y)
+  target_l = list(target_x, target_y)
+}
 
 ###### Training Step #####
-epochs = 1000
+epochs = 500
 loss = rep(NA, epochs)
 optimizer = tf$keras$optimizers$Adam(learning_rate=0.001)
 
@@ -72,19 +90,31 @@ if(FALSE){
       }
     }
     # Saving weights after training
-    thetaNN_l[[1]]$save_weights(paste0("R/tram_dag/chain3_model1_weights_scaled.h5"))
-    thetaNN_l[[2]]$save_weights(paste0("R/tram_dag/chain3_model2_weights_scaled.h5"))
-    thetaNN_l[[3]]$save_weights(paste0("R/tram_dag/chain3_model3_weights_scaled.h5"))
-    plot(loss, type='l')
+    thetaNN_l[[1]]$save_weights(paste0("R/tram_dag/dir_model1_weights.h5"))
+    thetaNN_l[[2]]$save_weights(paste0("R/tram_dag/dir_model2_weights.h5"))
+    plot(loss, type='l') 
+    #-2.300 (M=30, correct direction)
+    #-2.289 (M=30, wrong direction)
+    #-2.186 (M=2, correct direction)
+    #-2.176 (M=2, wrong direction)
+    
+    #Effect 1.42
+    #-1.87711,-1.843 (M=2, wrong direction, Gauss)
+    #-2.082422 (M=2, right direction, Gauss)
+    
+    #Effect 0.42
+    #-1.4623427 (M=2, wrong direction, Gauss)
+    #-1.4625888 (M=2, right direction, Gauss)
+    
 } else{
-  thetaNN_l[[1]]$load_weights("R/tram_dag/chain3_model1_weights_scaled.h5")
-  thetaNN_l[[2]]$load_weights("R/tram_dag/chain3_model2_weights_scaled.h5")
-  thetaNN_l[[3]]$load_weights("R/tram_dag/chain3_model3_weights_scaled.h5")
+  thetaNN_l[[1]]$load_weights("R/tram_dag/dir_model1_weights.h5")
+  thetaNN_l[[2]]$load_weights("R/tram_dag/dir_model2_weights.h5")
 }
 
 #######################
 # Evaluation
 #######################
+
 
 
 ### Distribution for X

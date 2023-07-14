@@ -28,6 +28,7 @@ init_beta_dist_for_h_dash = function(len_theta){
 }
 
 eval_h = function(theta_im, y_i, beta_dist_h){
+  if (DEBUG) print('EVAL H')
   y_i = tf$clip_by_value(y_i,1E-5, 1.0-1E-5)
   f_im = beta_dist_h$prob(y_i) 
   return (tf$reduce_mean(f_im * theta_im, axis=1L))
@@ -44,6 +45,7 @@ eval_h_extra <- function(theta_im, y_i, beta_dist_h, beta_dist_h_dash) {
   # If y_i < 0, use a linear extrapolation
   mask0 <- tf$math$less(y_i, L_START)
   h <- tf$where(mask0, slope0 * (y_i - L_START) + b0, y_i)
+  if (DEBUG) printf('~~~ eval_h_extra  Fraction of extrapolated samples < 0 : %f \n', tf$reduce_mean(tf$cast(mask0, tf$float32)))
   
   #(for y_i > 1)
   b1 <- tf$expand_dims(eval_h(theta_im, R_START, beta_dist_h),1L)
@@ -51,15 +53,40 @@ eval_h_extra <- function(theta_im, y_i, beta_dist_h, beta_dist_h_dash) {
   # If y_i > 1, use a linear extrapolation
   mask1 <- tf$math$greater(y_i, R_START)
   h <- tf$where(mask1, slope1 * (y_i - R_START) + b1, h)
+  if (DEBUG) printf('~~~ eval_h_extra  Fraction of extrapolated samples > 1 : %f \n', tf$reduce_mean(tf$cast(mask1, tf$float32)))
   
   # For values in between, use the original function
   mask <- tf$math$logical_and(tf$math$greater_equal(y_i, L_START), tf$math$less_equal(y_i, R_START))
   h <- tf$where(mask, beta_dist_h$prob(y_i)* theta_im, h)
-  
   # Return the mean value
   return(tf$reduce_mean(h , axis=1L))
 }
 
+eval_h_dash_extra = function(theta_im, y_i, beta_dist_h_dash){
+  R_START = 1-0.0001 #1.0-1E-1
+  L_START = 0.0001
+  
+  # for y_i < 0 extrapolate with tangent at h(0)
+  slope0 <- tf$expand_dims(eval_h_dash(theta_im, L_START, beta_dist_h_dash), axis=1L)
+  # If y_i < 0, use a linear extrapolation
+  mask0 <- tf$math$less(y_i, L_START)
+  h_dash <- tf$where(mask0, slope0, y_i)
+  if (DEBUG) printf('~~~ eval_h_dash_extra  Fraction of extrapolated samples < 0 : %f \n', tf$reduce_mean(tf$cast(mask0, tf$float32)))
+  
+  #(for y_i > 1)
+  slope1 <- tf$expand_dims(eval_h_dash(theta_im, R_START, beta_dist_h_dash), axis=1L)
+  # If y_i > 1, use a linear extrapolation
+  mask1 <- tf$math$greater(y_i, R_START)
+  h_dash <- tf$where(mask1, slope1, h_dash)
+  if (DEBUG) printf('~~~ eval_h_extra  Fraction of extrapolated samples > 1 : %f \n', tf$reduce_mean(tf$cast(mask1, tf$float32)))
+  
+  
+  # For values in between, use the original function
+  mask <- tf$math$logical_and(tf$math$greater_equal(y_i, L_START), tf$math$less_equal(y_i, R_START))
+  
+  h_dash <- tf$where(mask, tf$expand_dims(eval_h_dash(theta_im, y_i, beta_dist_h_dash),1L), h_dash)
+  return (tf$squeeze(h_dash))
+}
 
 
 eval_h_dash = function(theta, y, beta_dist_h_dash){
@@ -68,6 +95,8 @@ eval_h_dash = function(theta, y, beta_dist_h_dash){
   dtheta = (theta[,2:(ncol(theta))]-theta[,1:(ncol(theta)-1)])
   return (tf$reduce_sum(by * dtheta, axis=1L))
 }
+
+
 
 # ######## function that turns pre_theta from NN ouput to theta
 to_theta = function(pre_theta){

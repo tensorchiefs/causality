@@ -1,5 +1,6 @@
 source('R/tram_dag/utils.R')
 library(R.utils)
+DEBUG = FALSE
 #######################
 # Latent Distribution
 latent_dist = tfd_logistic(loc=0, scale=1)
@@ -116,8 +117,8 @@ summary(y_samples$numpy())
 quantile(y_samples$numpy(), seq(0,0.1,0.005)) #Approx 1% smaler 0
 
 ### Marginal Distribution for Z
-hist(dat.s[,3], freq = FALSE,100)
-lines(density(dat.s[,3]),col='red')
+hist(dat.tf$numpy()[,3], freq = FALSE,100)
+lines(density(dat.tf$numpy()[,3]),col='red')
 parents_z = tf$concat(list(x_samples, y_samples), axis=1L)
 z_sample = sample_from_target(thetaNN_z, parents_z)
 z = z_sample$numpy()
@@ -137,8 +138,6 @@ doX_triangle = function(doX){
     return(matrix(c(doX_tensor$numpy(),ys$numpy(), zs$numpy()), ncol=3))
 }
 
-
-
 dat_do_xup = unscale(dat.tf_u, doX_triangle(doX=0.75))$numpy()
 dat_do_xdown = unscale(dat.tf_u, doX_triangle(doX=0.25))$numpy()
 
@@ -149,8 +148,21 @@ x_1 = dat_do_xup[1,1]
 (mean(dat_do_xup[,3])  - mean(dat_do_xdown[,3])) / (x_1-x_0) #Should be 6.0
 
 
+############################### Do Y ########################
+#Samples from Z give X=doX
+doY_triangle = function(doY){
+  xs = dat.tf[,1,drop=FALSE]
+  doY_tensor = tf$expand_dims(0*dat.tf[,2] + doY,1L) 
+  parents_z = tf$concat(list(xs, doY_tensor), axis=1L)
+  zs = sample_from_target(thetaNN_l[[3]], parents_z)
+  return(matrix(c(xs$numpy(),doY_tensor$numpy(), zs$numpy()), ncol=3))
+}
 
+dat_do_up = unscale(dat.tf_u, doY_triangle(doY = 0.75))$numpy()
+dat_do_down = unscale(dat.tf_u, doY_triangle(doY = 0.25))$numpy()
 
-
+down = dat_do_down[1,2]
+up = dat_do_up[1,2]
+(mean(dat_do_up[,3])  - mean(dat_do_down[,3])) / (up-down) #Should be 0.5
 
 

@@ -37,14 +37,18 @@ train_step = function(thetaNN_l, parents_l, target_l, optimizer){
   return(list(NLL=NLL))
 }
 
-
-#TODO change to eval_h extra (for evaluation of testset and maybe training)
 calc_NLL = function(nn_theta_tile, parents, target){
   theta_tilde = nn_theta_tile(parents)
   theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
   theta = to_theta(theta_tilde)
-  latent = eval_h(theta, y_i = target, beta_dist_h = bp$beta_dist_h)
-  h_dash = eval_h_dash(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
+  
+  #latentold = eval_h(theta, y_i = target, beta_dist_h = bp$beta_dist_h)
+  latent = eval_h_extra(theta, y_i = target, beta_dist_h = bp$beta_dist_h, beta_dist_h_dash = bp$beta_dist_h_dash)
+  
+  #h_dashOld = eval_h_dash(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
+  h_dash = eval_h_dash_extra(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
+  
+  
   pz = latent_dist
   return(
     -tf$math$reduce_mean(
@@ -53,13 +57,12 @@ calc_NLL = function(nn_theta_tile, parents, target){
   )
 }
 
-#TODO change to eval_h extra
-predict_p_target = function(thetaNN, parents, target_grid){
-  theta_tilde = thetaNN(parents)
+
+predict_p_target = function(thetaNN, parents, target_grid){  theta_tilde = thetaNN(parents)
   theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
   theta = to_theta(theta_tilde)
-  latent = eval_h(theta, y_i = target_grid, beta_dist_h = bp$beta_dist_h)
-  h_dash = eval_h_dash(theta, target_grid, beta_dist_h_dash = bp$beta_dist_h_dash)
+  latent = eval_h_extra(theta, y_i = target_grid, beta_dist_h = bp$beta_dist_h, beta_dist_h_dash = bp$beta_dist_h_dash)
+  h_dash = eval_h_dash_extra(theta, target_grid, beta_dist_h_dash = bp$beta_dist_h_dash)
   pz = latent_dist
   p_target = pz$prob(latent) * h_dash
   return(p_target)
