@@ -45,7 +45,9 @@ dgp <- function(n) {
 } 
 
 dat.tf_u <- dgp(50000)
+pairs(dat.tf_u$numpy())
 dat.tf = scale_df(dat.tf_u)
+pairs(dat.tf$numpy())
 
 ##### Creation of deep transformation models ######
 # We need on for each variable in the SCM

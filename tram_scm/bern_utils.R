@@ -1,3 +1,6 @@
+R_START = 1-0.0001 #1.0-1E-1
+L_START = 0.0001
+
 utils_scale = function (y){
   min_y = min(y) 
   max_y = max(y) 
@@ -28,16 +31,13 @@ init_beta_dist_for_h_dash = function(len_theta){
 }
 
 eval_h = function(theta_im, y_i, beta_dist_h){
-  if (DEBUG) print('EVAL H')
-  y_i = tf$clip_by_value(y_i,1E-5, 1.0-1E-5)
+  #if (DEBUG) print('EVAL H')
+  y_i = tf$clip_by_value(y_i,L_START, R_START)
   f_im = beta_dist_h$prob(y_i) 
   return (tf$reduce_mean(f_im * theta_im, axis=1L))
 }
 
 eval_h_extra <- function(theta_im, y_i, beta_dist_h, beta_dist_h_dash) {
-  
-  R_START = 1-0.0001 #1.0-1E-1
-  L_START = 0.0001
   
   # for y_i < 0 extrapolate with tangent at h(0)
   slope0 <- tf$expand_dims(eval_h_dash(theta_im, L_START, beta_dist_h_dash), axis=1L)
@@ -63,8 +63,6 @@ eval_h_extra <- function(theta_im, y_i, beta_dist_h, beta_dist_h_dash) {
 }
 
 eval_h_dash_extra = function(theta_im, y_i, beta_dist_h_dash){
-  R_START = 1-0.0001 #1.0-1E-1
-  L_START = 0.0001
   
   # for y_i < 0 extrapolate with tangent at h(0)
   slope0 <- tf$expand_dims(eval_h_dash(theta_im, L_START, beta_dist_h_dash), axis=1L)
@@ -90,7 +88,7 @@ eval_h_dash_extra = function(theta_im, y_i, beta_dist_h_dash){
 
 
 eval_h_dash = function(theta, y, beta_dist_h_dash){
-  y = tf$clip_by_value(y,1E-5, 1.0-1E-5)
+  y = tf$clip_by_value(y,L_START, R_START)
   by = beta_dist_h_dash$prob(y) 
   dtheta = (theta[,2:(ncol(theta))]-theta[,1:(ncol(theta)-1)])
   return (tf$reduce_sum(by * dtheta, axis=1L))
