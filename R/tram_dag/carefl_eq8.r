@@ -2,7 +2,9 @@ source('R/tram_dag/utils.R')
 library(R.utils)
 DEBUG = FALSE
 DEBUG_NO_EXTRA = FALSE
-SUFFIX = 'runNormal_Only4'
+
+SUFFIX = 'runNormal_1e3'
+
 DROPBOX = 'C:/Users/sick/dl Dropbox/beate sick/IDP_Projekte/DL_Projekte/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 DROPBOX = '~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 if (rstudioapi::isAvailable()) {
@@ -91,7 +93,7 @@ val_data = split_data(val$A, val$df_scaled)
 ###### Training Step #####
 optimizer= tf$keras$optimizers$Adam(learning_rate=0.001)
 l = do_training(train$name, thetaNN_l = thetaNN_l, train_data = train_data, val_data = val_data,
-                SUFFIX, epochs = 300,  optimizer=optimizer)
+                SUFFIX, epochs = 500,  optimizer=optimizer)
 
 ### Save Script
 dirname = paste0(DROPBOX, "exp/", train$name, "/", SUFFIX, "/")
@@ -113,7 +115,7 @@ thetaNN_l[[4]]$get_weights()[[2]]
 #thetaNN_l[[1]]$set_weights(readRDS('/tmp/dumm1.rds'))
 
 #Loading data from epoch e
-e = 300
+e = 500
 for (i in 1:ncol(val$A)){
   #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")
   #thetaNN_l[[i]]$load_weights(path.expand(fn))
@@ -167,21 +169,21 @@ dox1_eq8 = function(doX, thetaNN_l, num_samples){
 }
 
 ##################
-# Do Interventions
+# Do Interventions on x1
 dox_origs = seq(-3, 3, by = 0.5)
 res_med_x4  = res_scm_x4 = res_scm_x3 = res_x3 = res_x4 = dox_origs
 for (i in 1:length(dox_origs)){
   dox_orig = dox_origs[i]
   #dox_orig = -2 # we expect E(X3|X1=dox_orig)=dox_orig
   dox=scale_value(train$df_orig, col=1L, dox_orig)
-  num_samples = 1000L
+  num_samples = 1142L
   dat_do_x_s = dox1_eq8(dox, thetaNN_l, num_samples = num_samples)
   
   #
   df = unscale(train$df_orig, dat_do_x_s)
   res_x3[i] = mean(df[,3]$numpy())
   res_x4[i] = mean(df[,4]$numpy())
-  res_med_x4[i] = median(df[,4]$numpy())
+  #res_med_x4[i] = median(df[,4]$numpy())
   
   
   d = dgp(1000L, coeffs = coeffs, doX1=dox_orig)
@@ -189,18 +191,50 @@ for (i in 1:length(dox_origs)){
   res_scm_x4[i] = mean(d$df_orig[,4]$numpy())
 }
 #X3
-mean((res_x3 - dox_origs)^2)
-plot(dox_origs, res_x3, main='X3')
-abline(0,1)
-points(dox_origs, res_scm_x3, col='green')
+mse = mean((res_x3 - dox_origs)^2)
+x1dat = data.frame(x=train$df_orig$numpy()[,1])
+library(ggplot2)
+data.frame(
+  x = dox_origs,
+  ours = res_x3,
+  theoretical = dox_origs,
+  Simulation_DGP = res_scm_x3
+) %>% 
+  pivot_longer(cols = 2:4) %>% 
+  ggplot(aes(x=x, y=value, col=name, type=name)) + geom_point() +
+  geom_abline(intercept = 0, slope = 1, col='skyblue') +
+  xlab("do(X1)") +
+  ylab("E(X3|do(X1)") +
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
+  ggtitle(paste0('MSE ours vs theoretical: ', round(mse,4)))
 
 #X4
-mean((res_x4 - coeffs[2] * dox_origs^2)^2)
-plot(dox_origs, res_x4, main='X4')
-lines(dox_origs, coeffs[2] * dox_origs^2)
-points(dox_origs, res_scm_x4, col='green')
-points(dox_origs, res_med_x4, col='red')
+mse = mean((res_x4 - coeffs[2] * dox_origs^2)^2)
+dox1s = seq(-3,3, length.out=100) 
+dat_theo = data.frame(
+  x = dox1s,
+  y = coeffs[2] * dox1s^2
+)
 
+library(ggplot2)
+data.frame(
+  x = dox_origs,
+  ours = res_x4,
+  theoretical = coeffs[2] * dox_origs^2,
+  Simulation_DGP = res_scm_x4
+) %>% 
+  pivot_longer(cols = 2:4) %>% 
+  ggplot(aes(x=x, y=value, col=name, type=name)) + geom_point() +
+  xlab("do(X1)") +
+  ylab("E(X4|do(X1)") +
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
+  geom_line(data = dat_theo, aes(x=x, y=y),inherit.aes = FALSE, col='skyblue')+
+  ggtitle(paste0('MSE ours vs theoretical: ', round(mse,4)))
+
+
+###############################################
+# Dependency plots 
+###############################################
 
 ######### x4 with flexible x2 given x1  #######
 which(train$df_orig$numpy()[,1] < -1)
@@ -283,10 +317,9 @@ plot(unscaled[,pn], unscaled[,tn], xlab=paste0('x', pn), ylab=paste0('x', tn), m
 lines(unscaled[,pn], lowess(unscaled[,tn])$y, col='darkgreen', lwd=4)
 rug(train$df_orig$numpy()[,2])
 d = train$df_orig$numpy()[ln,]
-#x3=x1+c1*x2^3
-lines(unscaled[,pn], 0.3*unscaled[,pn]^2 + -d[pf], col='red', lwd=2)
-points(d[pn], 0.3*d[pn]^2 - d[pf], col='red', pch='+',cex=3)
-
+#c1
+lines(unscaled[,pn], coeffs[2]*unscaled[,pn]^2 -d[pf], col='red', lwd=2)
+points(d[pn], coeffs[2]*d[pn]^2 - d[pf], col='red', pch='+',cex=3)
 
 
 
