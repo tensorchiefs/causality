@@ -14,26 +14,39 @@ source('tram_scm/model_utils.R')
 ########### Functions ############
 ##### Creation of deep transformation models ######
 # We need on for each variable in the SCM
-make_net = function(A, dat_scaled.tf, len_theta){
-  parents_l = thetaNN_l = target_l = list()
+split_data = function(A, dat_scaled.tf){
+  parents_l = target_l = list()
   for (i in 1:ncol(A)){
     parents = which(A[,i] == 1)
     if (length(parents) == 0){ # No parents source node
       parents_tmp = 0*dat_scaled.tf[,i] + 1
-      thetaNN_tmp = make_model(len_theta, 1)
+      #thetaNN_tmp = make_model(len_theta, 1)
       target_tmp = dat_scaled.tf[,i, drop=FALSE]
     } else{ # Node has parents
       parents_tmp  = dat_scaled.tf[,parents,drop=FALSE]
-      thetaNN_tmp = make_model(len_theta, length(parents))
+      #thetaNN_tmp = make_model(len_theta, length(parents))
       target_tmp = dat_scaled.tf[,i, drop=FALSE]
-      #calc_NLL(thetaNN, parents_tmp, target)
     }
     parents_l = append(parents_l, parents_tmp)
-    thetaNN_l = append(thetaNN_l, thetaNN_tmp)
+    #thetaNN_l = append(thetaNN_l, thetaNN_tmp)
     target_l = append(target_l, target_tmp)
   }
-  return(list(parents = parents_l, target = target_l, thetaNN = thetaNN_l))
+  return(list(parents = parents_l, target = target_l))
 }
+
+make_thetaNN = function(A, parents_l){
+  thetaNN_l = list()
+  for (i in 1:length(parents_l)){
+    parents = which(A[,i] == 1)
+    if (length(parents) == 0){
+      thetaNN_l[[i]] = make_model(len_theta, 1)
+    } else{
+      thetaNN_l[[i]] = make_model(len_theta, length(parents))
+    }
+  }
+  return(thetaNN_l)
+}
+
 
 train_step = function(thetaNN_l, parents_l, target_l, optimizer){
   n = length(thetaNN_l)
@@ -227,14 +240,12 @@ make_model = function(len_theta, parent_dim){
   return (model)
 }
 
-do_training = function(name, net, net_val, SUFFIX, epochs=200, optimizer= tf$keras$optimizers$Adam(learning_rate=0.001)){
-  thetaNN_l = net$thetaNN
-  parents_l = net$parents
-  target_l = net$target
-  #We don;t nee the network
-  net_val$thetaNN = NULL
-  parents_l_val = net_val$parents
-  target_l_val = net_val$target
+do_training = function(name, thetaNN_l, train_data, val_data, SUFFIX, epochs=200, optimizer= tf$keras$optimizers$Adam(learning_rate=0.001)){
+  parents_l = train_data$parents
+  target_l = train_data$target
+
+  parents_l_val = val_data$parents
+  target_l_val = val_data$target
   
   
   loss = loss_val = rep(NA, epochs)
@@ -254,8 +265,20 @@ do_training = function(name, net, net_val, SUFFIX, epochs=200, optimizer= tf$ker
         loss_val[e] = NLL_val
         printf("e:%f  Train: %f, Val: %f \n",e, l$NLL$numpy(), NLL_val)
         for (i in 1:ncol(val$A)){
-          fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")
-          thetaNN_l[[i]]$save_weights(path.expand(fn))
+          printf('Layer %d checksum: %s \n',i, calculate_checksum(thetaNN_l[[i]]$get_weights()))
+          
+          #There might be a problem with h5
+          #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")
+          #thetaNN_l[[i]]$save_weights(path.expand(fn))
+          
+          fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.rds")
+          saveRDS(thetaNN_l[[i]]$get_weights(), path.expand(fn))
+          
+          #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_model.h5")
+          #save_model_hdf5(thetaNN_l[[i]], fn)
+          
+          fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_checksum.txt")
+          write(calculate_checksum(thetaNN_l[[i]]$get_weights()), fn)
         }
       }
     }
@@ -268,15 +291,31 @@ do_training = function(name, net, net_val, SUFFIX, epochs=200, optimizer= tf$ker
   return(list(loss, loss_val))
 }
 
+# Function to calculate the SHA256 checksum
+library(digest)
+calculate_checksum <- function(weights) {
+  # Start an empty vector to hold all byte-converted weights
+  weights_bytes <- c()
+  
+  for (i in 1:length(weights)) {
+    # Transform the weight to bytes
+    weight_bytes <- serialize(weights[[i]], NULL)
+    weights_bytes <- c(weights_bytes, weight_bytes)
+  }
+  
+  # Calculate the digest on the concatenated byte strings
+  return(digest(weights_bytes, algo="sha256", serialize=FALSE))
+}
 
 plot_obs_fit = function(parents_l, target_l, thetaNN_l,name){
   for (i in 1:length(parents_l)){
-    parents = parents_l_val2[[i]]
-    targets = target_l_val2[[i]]
+    parents = parents_l[[i]]
+    targets = target_l[[i]]
     thetaNN = thetaNN_l[[i]]
-    hist(targets$numpy(), freq = FALSE,100, main=paste0(name, ' x_',i))
+    hist(targets$numpy(), freq = FALSE,100, main=paste0(name, ' x_',i, ' green for model'))
     x_samples = sample_from_target(thetaNN_l[[i]], parents)
     lines(density(x_samples$numpy()), col='green')
+    
     #hist(x_samples$numpy(),100,xlim=c(0,1))
   }
 }

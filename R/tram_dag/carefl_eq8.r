@@ -2,7 +2,7 @@ source('R/tram_dag/utils.R')
 library(R.utils)
 DEBUG = FALSE
 DEBUG_NO_EXTRA = FALSE
-SUFFIX = 'run500'
+SUFFIX = 'runNormal_Only4'
 DROPBOX = 'C:/Users/sick/dl Dropbox/beate sick/IDP_Projekte/DL_Projekte/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 DROPBOX = '~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 if (rstudioapi::isAvailable()) {
@@ -39,7 +39,10 @@ rlaplace <- function(n, location = 0, scale = 1) {
 hist(rlaplace(10000),100)
 sd(rlaplace(10000))
 
-dgp <- function(n_obs, coeffs, doX1=NA, dat_train=NULL) {
+dgp <- function(n_obs, coeffs, doX1=NA, dat_train=NULL, seed=NA) {
+  if (is.na(seed) == FALSE){
+    set.seed(seed)
+  }
   #X <- matrix(rlaplace(2 * n_obs, 0, 1 / sqrt(2)), nrow = 2, ncol = n_obs)
   X <- matrix(rnorm(2 * n_obs, 0, 1), nrow = 2, ncol = n_obs)
   X_1 <- X[1,]
@@ -69,7 +72,7 @@ dgp <- function(n_obs, coeffs, doX1=NA, dat_train=NULL) {
   return(list(df_orig=dat.tf, df_scaled = scaled, coef=coeffs, A=A, name='carefl_eq8'))
 } 
 
-train = dgp(1000, coeffs = coeffs)
+train = dgp(1000, coeffs = coeffs, seed=42)
 pairs(train$df_orig$numpy())
 pairs(train$df_scaled$numpy())
 train$coef
@@ -78,64 +81,73 @@ library(igraph)
 graph <- graph_from_adjacency_matrix(train$A, mode = "directed", diag = FALSE)
 plot(graph, vertex.color = "lightblue", vertex.size = 30, edge.arrow.size = 0.5)
 
-net = make_net(train$A, train$df_scaled, len_theta = len_theta)
+train_data = split_data(train$A, train$df_scaled)
+thetaNN_l = make_thetaNN(train$A, train_data$parents)
 
 val = dgp(5000, coeffs = coeffs, dat_train = train$df_orig)
-net_val = make_net(val$A, val$df_scaled, len_theta = len_theta)
-#We don;t nee the network
-net_val$thetaNN = NULL
+val_data = split_data(val$A, val$df_scaled)
 
 
 ###### Training Step #####
+optimizer= tf$keras$optimizers$Adam(learning_rate=0.001)
+l = do_training(train$name, thetaNN_l = thetaNN_l, train_data = train_data, val_data = val_data,
+                SUFFIX, epochs = 300,  optimizer=optimizer)
+
+### Save Script
 dirname = paste0(DROPBOX, "exp/", train$name, "/", SUFFIX, "/")
 file.copy(this_file, dirname)
 
-optimizer= tf$keras$optimizers$Adam(learning_rate=0.001)
-l = do_training(train$name, net=net, net_val=net_val,SUFFIX, epochs = 200,  optimizer=optimizer)
 #e:200.000000  Train: -2.883684, Val: -2.179241 
 loss = l[[1]]
 loss_val = l[[2]]
-plot(loss, type='l', ylim=c(-4.0,5))
+plot(loss, type='l', ylim=c(-6.0,5))
 points(loss_val, col='green')
 
 
 #######################
 # Below ad-hoc evaluation
-thetaNN_l = net$thetaNN
-parents_l = net$parents
-target_l = net$target
+print("----------- Weights before loading ----------- ")
+thetaNN_l[[4]]$get_weights()[[2]]
+#saveRDS(thetaNN_l[[1]]$get_weights(), '/tmp/dumm1.rds')
+#rm(thetaNN_l)
+#thetaNN_l[[1]]$set_weights(readRDS('/tmp/dumm1.rds'))
 
-parents_l_val = net_val$parents
-target_l_val = net_val$target
 #Loading data from epoch e
-e = 200
+e = 300
 for (i in 1:ncol(val$A)){
-  fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")
-  thetaNN_l[[i]]$load_weights(path.expand(fn))
+  #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")
+  #thetaNN_l[[i]]$load_weights(path.expand(fn))
+  fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.rds")
+  thetaNN_l[[i]]$set_weights(readRDS(fn))
+  
+  #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_model.h5")
+  #thetaNN_l[[i]] = load_model_hdf5(fn)
+  
+  printf('Layer %d checksum: %s \n',i, calculate_checksum(thetaNN_l[[i]]$get_weights()))
 }
 
-val2 = dgp(10000, coeffs = coeffs, dat_train = train$df_orig)
-net_val2 = make_net(val2$A, val2$df_scaled, len_theta = len_theta)
-parents_l_val2 = net_val2$parents
-target_l_val2 = net_val2$target
-net_val2$thetaNN = NULL
-  
 NLL_val = NLL_train = NLL_val2 = 0  
 for(i in 1:ncol(val$A)) { # Assuming that thetaNN_l, parents_l and target_l have the same length
-  NLL_train = NLL_train + calc_NLL(thetaNN_l[[i]], parents_l[[i]], target_l[[i]])$numpy()
-  NLL_val = NLL_val + calc_NLL(thetaNN_l[[i]], parents_l_val[[i]], target_l_val[[i]])$numpy()
-  NLL_val2 = NLL_val2 + calc_NLL(thetaNN_l[[i]], parents_l_val2[[i]], target_l_val2[[i]])$numpy()
+  NLL_train = NLL_train + calc_NLL(thetaNN_l[[i]], train_data$parents[[i]], train_data$target[[i]])$numpy()
+  NLL_val = NLL_val + calc_NLL(thetaNN_l[[i]], val_data$parents[[i]], val_data$target[[i]])$numpy()
+  #NLL_val2 = NLL_val2 + calc_NLL(thetaNN_l[[i]], parents_l_val2[[i]], target_l_val2[[i]])$numpy()
 }
-NLL_val
-loss_val[(length(loss_val)-10):length(loss_val)]
 loss[(length(loss)-10):length(loss)]
 NLL_train
-NLL_val2
+
+NLL_val 
+loss_val[(length(loss_val)-10):length(loss_val)]
 
 ##########. Checking obs fit the marginals 
-plot_obs_fit(parents_l, target_l, thetaNN_l, name='Training')
-plot_obs_fit(parents_l_val, target_l_val, thetaNN_l, name='Validation')
-plot_obs_fit(parents_l_val2, target_l_val2, thetaNN_l, name='Validation 2')
+plot_obs_fit(train_data$parents, train_data$target, thetaNN_l, name='Training')
+plot_obs_fit(val_data$parents, val_data$target, thetaNN_l, name='Validation')
+
+#DEBUG_NO_EXTRA = TRUE
+#dd  = sample_from_target(thetaNN_l[[4]], val_data$parents[[4]])
+#hist(x_samples$numpy(),100)
+#stripchart(x_samples$numpy(), method = 'jitter')
+#stripchart(dd$numpy(), method = 'jitter')
+
 
 ############################### Do X via Flow ########################
 #Samples from Z give X=doX
@@ -154,28 +166,136 @@ dox1_eq8 = function(doX, thetaNN_l, num_samples){
   return(matrix(c(doX_tensor$numpy(),x2_samples$numpy(), x3_samples$numpy(), x4_samples$numpy()), ncol=4))
 }
 
-
-dox_origs = seq(-3, 3, by = 0.2)
-res_scm = res = dox_origs
+##################
+# Do Interventions
+dox_origs = seq(-3, 3, by = 0.5)
+res_med_x4  = res_scm_x4 = res_scm_x3 = res_x3 = res_x4 = dox_origs
 for (i in 1:length(dox_origs)){
   dox_orig = dox_origs[i]
   #dox_orig = -2 # we expect E(X3|X1=dox_orig)=dox_orig
   dox=scale_value(train$df_orig, col=1L, dox_orig)
   num_samples = 1000L
   dat_do_x_s = dox1_eq8(dox, thetaNN_l, num_samples = num_samples)
-  mean(dat_do_x_s[,3])
+  
+  #
   df = unscale(train$df_orig, dat_do_x_s)
-  res[i] = mean(df[,3]$numpy())
+  res_x3[i] = mean(df[,3]$numpy())
+  res_x4[i] = mean(df[,4]$numpy())
+  res_med_x4[i] = median(df[,4]$numpy())
+  
   
   d = dgp(1000L, coeffs = coeffs, doX1=dox_orig)
-  res_scm[i] = mean(d$df_orig[,3]$numpy())
+  res_scm_x3[i] = mean(d$df_orig[,3]$numpy())
+  res_scm_x4[i] = mean(d$df_orig[,4]$numpy())
 }
-mean((res - dox_origs)^2)
-plot(dox_origs, res)
+#X3
+mean((res_x3 - dox_origs)^2)
+plot(dox_origs, res_x3, main='X3')
 abline(0,1)
-points(dox_origs, res_scm, col='green')
+points(dox_origs, res_scm_x3, col='green')
+
+#X4
+mean((res_x4 - coeffs[2] * dox_origs^2)^2)
+plot(dox_origs, res_x4, main='X4')
+lines(dox_origs, coeffs[2] * dox_origs^2)
+points(dox_origs, res_scm_x4, col='green')
+points(dox_origs, res_med_x4, col='red')
 
 
-hist(train$df_orig[,1]$numpy(),100)
-abline(v=0)
+######### x4 with flexible x2 given x1  #######
+which(train$df_orig$numpy()[,1] < -1)
+ln = 7
+tn = 4
+pn = 2
+x1 = train$df_scaled$numpy()[ln,1]
+x1
+x1_org = train$df_orig$numpy()[ln,1]
+r = train_data$parents[[tn]]
+#hist(train$df_orig$numpy()[,2],100)
+# Compute min and max of the second column of the old tensor
+min_value = tf$reduce_min(r[,2L])
+max_value = tf$reduce_max(r[,2L])
+# Create a new tensor of the desired size and fill with required values
+first_column = tf$fill(c(1000L, 1L), x1)
+second_column = tf$reshape(tf$linspace(min_value, max_value, 1000L), c(-1L, 1L))
+new_tensor = tf$concat(c(first_column, second_column), axis=1L)
+res = sample_from_target(thetaNN_l[[tn]], new_tensor)
+df = data.frame(x1=first_column$numpy(),x2=second_column$numpy(),x3=0, x4=res$numpy())
+unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
+plot(unscaled[,2], unscaled[,tn], xlab='x2', ylab=paste0('x', tn), main = paste0('Given x1=',x1_org))
+lines(unscaled[,2], lowess(unscaled[,4])$y, col='darkgreen', lwd=2)
+rug(train$df_orig$numpy()[,2])
+d = train$df_orig$numpy()[ln,]
+abline(0.7*d[1]^2, -1, col='red', lwd=2)
+points(d[2], 0.7*d[1]^2 - d[2], col='red', pch='+',cex=3)
+
+
+######### x3 with flexible x1 given x2  #######
+tn = 3 #The target number
+pn = 1 #The flexible part
+pf = 2 #The fixed part in 1,2,3,4
+ln =1
+x_fixed = train$df_scaled$numpy()[ln,c(pf)]
+x_fixed
+xpn_org = train$df_orig$numpy()[ln,pn]
+r = train_data$parents[[tn]] #1,2
+# Compute min and max of the second column of the old tensor
+min_value = tf$reduce_min(r[,2L]) #TODO needs to be done by hand
+max_value = tf$reduce_max(r[,2L])
+# Create a new tensor of the desired size and fill with required values
+first_column = tf$reshape(tf$linspace(min_value, max_value, 1000L), c(-1L, 1L)) #here x1 
+second_column = tf$fill(c(1000L, 1L), x_fixed)
+new_tensor = tf$concat(c(first_column, second_column), axis=1L)
+res = sample_from_target(thetaNN_l[[tn]], new_tensor)
+df = data.frame(x1=first_column$numpy(),x2=second_column$numpy(),x3=res$numpy(), x4=0)
+unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
+
+plot(unscaled[,pn], unscaled[,tn], xlab=paste0('x', pn), ylab=paste0('x', tn), main = paste0('Given x_fixed=',x_fixed))
+lines(unscaled[,pn], lowess(unscaled[,tn])$y, col='darkgreen', lwd=4)
+rug(train$df_orig$numpy()[,2])
+d = train$df_orig$numpy()[ln,]
+#x3=x1+c1*x2^3
+abline(0.3*d[pf]^2, 1, col='red', lwd=2)
+points(d[pn], 0.3*d[pf]^2 + d[pn], col='red', pch='+',cex=3)
+
+
+######### x4 with flexible x1 given x2  #######
+tn = 4 #The target number
+pn = 1 #The flexible part
+pf = 2 #The fixed part in 1,2,3,4
+ln = 1
+x_fixed = train$df_scaled$numpy()[ln,c(pf)]
+x_fixed
+xpn_org = train$df_orig$numpy()[ln,pn]
+r = train_data$parents[[tn]]
+# Compute min and max of the second column of the old tensor
+min_value = tf$reduce_min(r[,1L]) #TODO needs to be done by hand
+max_value = tf$reduce_max(r[,1L])
+# Create a new tensor of the desired size and fill with required values
+first_column = tf$reshape(tf$linspace(min_value, max_value, 1000L), c(-1L, 1L)) #here x1 
+second_column = tf$fill(c(1000L, 1L), x_fixed)
+new_tensor = tf$concat(c(first_column, second_column), axis=1L)
+res = sample_from_target(thetaNN_l[[tn]], new_tensor)
+df = data.frame(x1=first_column$numpy(),x2=second_column$numpy(),x3=0, x4=res$numpy())
+unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
+
+plot(unscaled[,pn], unscaled[,tn], xlab=paste0('x', pn), ylab=paste0('x', tn), main = paste0('Given x_fixed=',x_fixed))
+lines(unscaled[,pn], lowess(unscaled[,tn])$y, col='darkgreen', lwd=4)
+rug(train$df_orig$numpy()[,2])
+d = train$df_orig$numpy()[ln,]
+#x3=x1+c1*x2^3
+lines(unscaled[,pn], 0.3*unscaled[,pn]^2 + -d[pf], col='red', lwd=2)
+points(d[pn], 0.3*d[pn]^2 - d[pf], col='red', pch='+',cex=3)
+
+
+
+
+
+
+
+
+
+
+
+
 
