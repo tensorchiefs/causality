@@ -233,94 +233,160 @@ data.frame(
 
 
 ###############################################
+# Counterfactual  
+###############################################
+# Attention, we don't have the same C2 as in the paper
+X1 = 2
+X2 = 1.5
+X3 = 0.81
+X4 = -0.28
+
+###### Theoretical (assume we know the complete SCM)
+# X_3 <- X_1 + coeffs[1] * (X_2^3)  + U3
+# X_4 <- -X_2 + coeffs[2] * (X_1^2) + U4
+
+U1 = X1
+U2 = X2
+U3 = X3 - X1 - coeffs[1] * X2^3
+U4 = X4 - coeffs[2]*X1^2 + X2
+
+#X1 --> alpha
+inter_x4_theo = function(alpha){
+   #return(coeffs[2]*alpha^2 - U2 + U4)
+   return(coeffs[2]*alpha^2 - coeffs[2] * X1^2 + X4)
+}
+
+abs(inter_x4_theo(2)-X4) #~1e-16 Consistency
+inter_x4_theo(0)
+
+alphas = seq(-3,3,0.1)
+plot(alphas, inter_x4_theo(alphas))
+
+###### From our model
+# Scaling the observed data so that it can be used with the networks
+x1 = scale_value(dat_train_orig = train$df_orig, col = 1, value = X1)
+x2 = scale_value(dat_train_orig = train$df_orig, col = 2, value = X2)
+x3 = scale_value(dat_train_orig = train$df_orig, col = 3, value = X3)
+x4 = scale_value(dat_train_orig = train$df_orig, col = 4, value = X4)
+
+#Calculation of z4 corresponding to the observed value x1, x2
+thetaNN = thetaNN_l[[4]] 
+parents = tf$constant(matrix(c(x1$numpy(),x2$numpy()),nrow=1))
+theta_tilde = thetaNN(parents)
+theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
+theta = to_theta(theta_tilde)
+z4 =  eval_h(theta, x4, beta_dist_h = bp$beta_dist_h)
+
+## Action
+a_org = 2.
+a = scale_value(dat_train_orig = train$df_orig, col = 1, value = a_org)
+parents_inter = tf$constant(matrix(c(a,x2$numpy()),nrow=1))
+theta_tilde = thetaNN(parents_inter)
+theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
+theta_inter = to_theta(theta_tilde)
+
+## Prediction
+latent_sample = z4
+object_fkt = function(t_i){
+  return(tf$reshape((eval_h_extra(theta_inter, y_i = t_i, 
+                                  beta_dist_h = bp$beta_dist_h,
+                                  beta_dist_h_dash = bp$beta_dist_h_dash) - latent_sample), 
+                    c(theta_tilde$shape[1],1L)))
+}
+res = tfp$math$find_root_chandrupatla(object_fkt, low = -100., high = 100.)$estimated_root
+df = data.frame(x1=as.numeric(res),x2=0,x3=0, x4=0)
+unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
+unscaled[1]
+
+###############################################
 # Dependency plots 
 ###############################################
-
-######### x4 with flexible x2 given x1  #######
-which(train$df_orig$numpy()[,1] < -1)
-ln = 7
-tn = 4
-pn = 2
-x1 = train$df_scaled$numpy()[ln,1]
-x1
-x1_org = train$df_orig$numpy()[ln,1]
-r = train_data$parents[[tn]]
-#hist(train$df_orig$numpy()[,2],100)
-# Compute min and max of the second column of the old tensor
-min_value = tf$reduce_min(r[,2L])
-max_value = tf$reduce_max(r[,2L])
-# Create a new tensor of the desired size and fill with required values
-first_column = tf$fill(c(1000L, 1L), x1)
-second_column = tf$reshape(tf$linspace(min_value, max_value, 1000L), c(-1L, 1L))
-new_tensor = tf$concat(c(first_column, second_column), axis=1L)
-res = sample_from_target(thetaNN_l[[tn]], new_tensor)
-df = data.frame(x1=first_column$numpy(),x2=second_column$numpy(),x3=0, x4=res$numpy())
-unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
-plot(unscaled[,2], unscaled[,tn], xlab='x2', ylab=paste0('x', tn), main = paste0('Given x1=',x1_org))
-lines(unscaled[,2], lowess(unscaled[,4])$y, col='darkgreen', lwd=2)
-rug(train$df_orig$numpy()[,2])
-d = train$df_orig$numpy()[ln,]
-abline(0.7*d[1]^2, -1, col='red', lwd=2)
-points(d[2], 0.7*d[1]^2 - d[2], col='red', pch='+',cex=3)
-
-
-######### x3 with flexible x1 given x2  #######
-tn = 3 #The target number
-pn = 1 #The flexible part
-pf = 2 #The fixed part in 1,2,3,4
-ln =1
-x_fixed = train$df_scaled$numpy()[ln,c(pf)]
-x_fixed
-xpn_org = train$df_orig$numpy()[ln,pn]
-r = train_data$parents[[tn]] #1,2
-# Compute min and max of the second column of the old tensor
-min_value = tf$reduce_min(r[,2L]) #TODO needs to be done by hand
-max_value = tf$reduce_max(r[,2L])
-# Create a new tensor of the desired size and fill with required values
-first_column = tf$reshape(tf$linspace(min_value, max_value, 1000L), c(-1L, 1L)) #here x1 
-second_column = tf$fill(c(1000L, 1L), x_fixed)
-new_tensor = tf$concat(c(first_column, second_column), axis=1L)
-res = sample_from_target(thetaNN_l[[tn]], new_tensor)
-df = data.frame(x1=first_column$numpy(),x2=second_column$numpy(),x3=res$numpy(), x4=0)
-unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
-
-plot(unscaled[,pn], unscaled[,tn], xlab=paste0('x', pn), ylab=paste0('x', tn), main = paste0('Given x_fixed=',x_fixed))
-lines(unscaled[,pn], lowess(unscaled[,tn])$y, col='darkgreen', lwd=4)
-rug(train$df_orig$numpy()[,2])
-d = train$df_orig$numpy()[ln,]
-#x3=x1+c1*x2^3
-abline(0.3*d[pf]^2, 1, col='red', lwd=2)
-points(d[pn], 0.3*d[pf]^2 + d[pn], col='red', pch='+',cex=3)
-
-
-######### x4 with flexible x1 given x2  #######
-tn = 4 #The target number
-pn = 1 #The flexible part
-pf = 2 #The fixed part in 1,2,3,4
-ln = 1
-x_fixed = train$df_scaled$numpy()[ln,c(pf)]
-x_fixed
-xpn_org = train$df_orig$numpy()[ln,pn]
-r = train_data$parents[[tn]]
-# Compute min and max of the second column of the old tensor
-min_value = tf$reduce_min(r[,1L]) #TODO needs to be done by hand
-max_value = tf$reduce_max(r[,1L])
-# Create a new tensor of the desired size and fill with required values
-first_column = tf$reshape(tf$linspace(min_value, max_value, 1000L), c(-1L, 1L)) #here x1 
-second_column = tf$fill(c(1000L, 1L), x_fixed)
-new_tensor = tf$concat(c(first_column, second_column), axis=1L)
-res = sample_from_target(thetaNN_l[[tn]], new_tensor)
-df = data.frame(x1=first_column$numpy(),x2=second_column$numpy(),x3=0, x4=res$numpy())
-unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
-
-plot(unscaled[,pn], unscaled[,tn], xlab=paste0('x', pn), ylab=paste0('x', tn), main = paste0('Given x_fixed=',x_fixed))
-lines(unscaled[,pn], lowess(unscaled[,tn])$y, col='darkgreen', lwd=4)
-rug(train$df_orig$numpy()[,2])
-d = train$df_orig$numpy()[ln,]
-#c1
-lines(unscaled[,pn], coeffs[2]*unscaled[,pn]^2 -d[pf], col='red', lwd=2)
-points(d[pn], coeffs[2]*d[pn]^2 - d[pf], col='red', pch='+',cex=3)
-
+if (FALSE){
+      ######### x4 with flexible x2 given x1  #######
+      which(train$df_orig$numpy()[,1] < -1)
+      ln = 7
+      tn = 4
+      pn = 2
+      x1 = train$df_scaled$numpy()[ln,1]
+      x1
+      x1_org = train$df_orig$numpy()[ln,1]
+      r = train_data$parents[[tn]]
+      #hist(train$df_orig$numpy()[,2],100)
+      # Compute min and max of the second column of the old tensor
+      min_value = tf$reduce_min(r[,2L])
+      max_value = tf$reduce_max(r[,2L])
+      # Create a new tensor of the desired size and fill with required values
+      first_column = tf$fill(c(1000L, 1L), x1)
+      second_column = tf$reshape(tf$linspace(min_value, max_value, 1000L), c(-1L, 1L))
+      new_tensor = tf$concat(c(first_column, second_column), axis=1L)
+      res = sample_from_target(thetaNN_l[[tn]], new_tensor)
+      df = data.frame(x1=first_column$numpy(),x2=second_column$numpy(),x3=0, x4=res$numpy())
+      unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
+      plot(unscaled[,2], unscaled[,tn], xlab='x2', ylab=paste0('x', tn), main = paste0('Given x1=',x1_org))
+      lines(unscaled[,2], lowess(unscaled[,4])$y, col='darkgreen', lwd=2)
+      rug(train$df_orig$numpy()[,2])
+      d = train$df_orig$numpy()[ln,]
+      abline(0.7*d[1]^2, -1, col='red', lwd=2)
+      points(d[2], 0.7*d[1]^2 - d[2], col='red', pch='+',cex=3)
+      
+      
+      ######### x3 with flexible x1 given x2  #######
+      tn = 3 #The target number
+      pn = 1 #The flexible part
+      pf = 2 #The fixed part in 1,2,3,4
+      ln =1
+      x_fixed = train$df_scaled$numpy()[ln,c(pf)]
+      x_fixed
+      xpn_org = train$df_orig$numpy()[ln,pn]
+      r = train_data$parents[[tn]] #1,2
+      # Compute min and max of the second column of the old tensor
+      min_value = tf$reduce_min(r[,2L]) #TODO needs to be done by hand
+      max_value = tf$reduce_max(r[,2L])
+      # Create a new tensor of the desired size and fill with required values
+      first_column = tf$reshape(tf$linspace(min_value, max_value, 1000L), c(-1L, 1L)) #here x1 
+      second_column = tf$fill(c(1000L, 1L), x_fixed)
+      new_tensor = tf$concat(c(first_column, second_column), axis=1L)
+      res = sample_from_target(thetaNN_l[[tn]], new_tensor)
+      df = data.frame(x1=first_column$numpy(),x2=second_column$numpy(),x3=res$numpy(), x4=0)
+      unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
+      
+      plot(unscaled[,pn], unscaled[,tn], xlab=paste0('x', pn), ylab=paste0('x', tn), main = paste0('Given x_fixed=',x_fixed))
+      lines(unscaled[,pn], lowess(unscaled[,tn])$y, col='darkgreen', lwd=4)
+      rug(train$df_orig$numpy()[,2])
+      d = train$df_orig$numpy()[ln,]
+      #x3=x1+c1*x2^3
+      abline(0.3*d[pf]^2, 1, col='red', lwd=2)
+      points(d[pn], 0.3*d[pf]^2 + d[pn], col='red', pch='+',cex=3)
+      
+      
+      ######### x4 with flexible x1 given x2  #######
+      tn = 4 #The target number
+      pn = 1 #The flexible part
+      pf = 2 #The fixed part in 1,2,3,4
+      ln = 1
+      x_fixed = train$df_scaled$numpy()[ln,c(pf)]
+      x_fixed
+      xpn_org = train$df_orig$numpy()[ln,pn]
+      r = train_data$parents[[tn]]
+      # Compute min and max of the second column of the old tensor
+      min_value = tf$reduce_min(r[,1L]) #TODO needs to be done by hand
+      max_value = tf$reduce_max(r[,1L])
+      # Create a new tensor of the desired size and fill with required values
+      first_column = tf$reshape(tf$linspace(min_value, max_value, 1000L), c(-1L, 1L)) #here x1 
+      second_column = tf$fill(c(1000L, 1L), x_fixed)
+      new_tensor = tf$concat(c(first_column, second_column), axis=1L)
+      res = sample_from_target(thetaNN_l[[tn]], new_tensor)
+      df = data.frame(x1=first_column$numpy(),x2=second_column$numpy(),x3=0, x4=res$numpy())
+      unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
+      
+      plot(unscaled[,pn], unscaled[,tn], xlab=paste0('x', pn), ylab=paste0('x', tn), main = paste0('Given x_fixed=',x_fixed))
+      lines(unscaled[,pn], lowess(unscaled[,tn])$y, col='darkgreen', lwd=4)
+      rug(train$df_orig$numpy()[,2])
+      d = train$df_orig$numpy()[ln,]
+      #c1
+      lines(unscaled[,pn], coeffs[2]*unscaled[,pn]^2 -d[pf], col='red', lwd=2)
+      points(d[pn], coeffs[2]*d[pn]^2 - d[pf], col='red', pch='+',cex=3)
+}
 
 
 
