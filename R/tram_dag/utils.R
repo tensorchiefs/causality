@@ -315,9 +315,70 @@ plot_obs_fit = function(parents_l, target_l, thetaNN_l,name){
     hist(targets$numpy(), freq = FALSE,100, main=paste0(name, ' x_',i, ' green for model'))
     x_samples = sample_from_target(thetaNN_l[[i]], parents)
     lines(density(x_samples$numpy()), col='green')
-    
     #hist(x_samples$numpy(),100,xlim=c(0,1))
   }
 }
+
+
+###### Helper Functions (simple for non-time critical stuff)
+#@static_method
+get_z = function(net, parents, x){
+  parents = tf$constant(matrix(parents, nrow=1), dtype = tf$float32)
+  x = tf$constant(x)
+  theta_tilde = net(parents)
+  theta = to_theta(theta_tilde)
+  res =  eval_h_extra(theta, x, beta_dist_h = bp$beta_dist_h, beta_dist_h_dash = bp$beta_dist_h_dash)
+  return(as.numeric(res$numpy()))
+}
+
+#' get_x return the x for a given z. 
+#' simple function for non-time critical stuff
+#'
+#' More detailed description of the function.
+#' @param net the network (the last layer net)
+#' @return The value of x
+#' 
+#@static_method
+get_x = function(net, parents, z){
+  parents = tf$constant(matrix(parents, nrow=1), dtype = tf$float32)
+  z = tf$constant(z)
+  theta_tilde = net(parents)
+  theta = to_theta(theta_tilde)
+  ## Prediction
+  latent_sample = z
+  object_fkt = function(t_i){
+    return(tf$reshape((eval_h_extra(theta, y_i = t_i, 
+                                    beta_dist_h = bp$beta_dist_h,
+                                    beta_dist_h_dash = bp$beta_dist_h_dash) - latent_sample), 
+                      c(theta_tilde$shape[1],1L)))
+  }
+  res = tfp$math$find_root_chandrupatla(object_fkt, low = 0., high = 1.)$estimated_root
+  return(as.numeric(res$numpy()))
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
