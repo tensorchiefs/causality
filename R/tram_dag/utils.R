@@ -48,6 +48,27 @@ make_thetaNN = function(A, parents_l){
 }
 
 
+update_learning_rate <- function(optimizer, current_loss, factor=0.1, patience=5, min_lr=1e-7) {
+  if (!exists("best_loss")) {
+    assign("best_loss", current_loss, envir=globalenv())
+    assign("wait", 0, envir=globalenv())
+  }
+  
+  if (current_loss < best_loss) {
+    assign("best_loss", current_loss, envir=globalenv())
+    assign("wait", 0, envir=globalenv())
+  } else {
+    wait <<- wait + 1
+    if (wait >= patience) {
+      current_lr <- optimizer$learning_rate$numpy()
+      new_lr <- max(current_lr * factor, min_lr)
+      optimizer$learning_rate$assign(new_lr)
+      cat("\033[31mReduced learning rate to", new_lr, "\033[0m\n")
+      assign("wait", 0, envir=globalenv())
+    }
+  }
+}
+
 train_step = function(thetaNN_l, parents_l, target_l, optimizer){
   n = length(thetaNN_l)
   
@@ -70,6 +91,7 @@ train_step = function(thetaNN_l, parents_l, target_l, optimizer){
       purrr::transpose(list(grads[[i]], tvars[[i]]))
     )  
   }
+  
   return(list(NLL=NLL))
 }
 
@@ -256,16 +278,21 @@ do_training = function(name, thetaNN_l, train_data, val_data, SUFFIX, epochs=200
   if(file.exists(loss_name) == FALSE){
     for (e in 1:epochs){
       l = train_step(thetaNN_l, parents_l, target_l, optimizer=optimizer)
+      
       loss[e]  = l$NLL$numpy()
-      if (e %% 5 == 0) {
-        NLL_val = 0  
-        for(i in 1:ncol(val$A)) { # Assuming that thetaNN_l, parents_l and target_l have the same length
-          NLL_val = NLL_val + calc_NLL(thetaNN_l[[i]], parents_l_val[[i]], target_l_val[[i]])$numpy()
-        }
-        loss_val[e] = NLL_val
-        printf("e:%f  Train: %f, Val: %f \n",e, l$NLL$numpy(), NLL_val)
+      
+      NLL_val = 0  
+      for(i in 1:ncol(val$A)) { # Assuming that thetaNN_l, parents_l and target_l have the same length
+        NLL_val = NLL_val + calc_NLL(thetaNN_l[[i]], parents_l_val[[i]], target_l_val[[i]])$numpy()
+      }
+      loss_val[e] = NLL_val
+      
+      update_learning_rate(optimizer,NLL_val)
+      printf("e:%f  Train: %f, Val: %f \n",e, l$NLL$numpy(), NLL_val)
+      if (e %% 100 == 0) {
+        
         for (i in 1:ncol(val$A)){
-          printf('Layer %d checksum: %s \n',i, calculate_checksum(thetaNN_l[[i]]$get_weights()))
+          #printf('Layer %d checksum: %s \n',i, calculate_checksum(thetaNN_l[[i]]$get_weights()))
           
           #There might be a problem with h5
           #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")

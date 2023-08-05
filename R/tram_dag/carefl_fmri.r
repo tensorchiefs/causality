@@ -76,8 +76,10 @@ for (id in ids){
   abline(fit)  
   
   ######### Using Deep Trafo, a straight forward 
-  m = LmNN(HG ~ 0 + CG, data = tr)
-  fit(m, epochs=200, validation_split=0)
+  #m = LmNN(HG ~ 0 + CG, data = tr)
+  m = ColrNN(HG ~ 0 + CG, data = tr)
+  fit(m, epochs=300, validation_split=0)
+  
   d = inter
   d$HG = NULL
   res = predict(m, d, type='cdf')
