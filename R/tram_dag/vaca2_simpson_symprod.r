@@ -110,38 +110,8 @@ loss_val = l[[2]]
 plot(loss, type='l', ylim=c(-4.5,-3.0))
 points(loss_val, col='green')
 
-
-#######################
-# Below ad-hoc evaluation
-#saveRDS(thetaNN_l[[1]]$get_weights(), '/tmp/dumm1.rds')
-#rm(thetaNN_l)
-#thetaNN_l[[1]]$set_weights(readRDS('/tmp/dumm1.rds'))
-
 #Loading data from epoch e
-e = EPOCHS
-for (i in 1:ncol(val$A)){
-  #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")
-  #thetaNN_l[[i]]$load_weights(path.expand(fn))
-  fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.rds")
-  thetaNN_l[[i]]$set_weights(readRDS(fn))
-  
-  #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_model.h5")
-  #thetaNN_l[[i]] = load_model_hdf5(fn)
-  
-  printf('Layer %d checksum: %s \n',i, calculate_checksum(thetaNN_l[[i]]$get_weights()))
-}
-
-NLL_val = NLL_train = NLL_val2 = 0  
-for(i in 1:ncol(val$A)) { # Assuming that thetaNN_l, parents_l and target_l have the same length
-  NLL_train = NLL_train + calc_NLL(thetaNN_l[[i]], train_data$parents[[i]], train_data$target[[i]])$numpy()
-  NLL_val = NLL_val + calc_NLL(thetaNN_l[[i]], val_data$parents[[i]], val_data$target[[i]])$numpy()
-  #NLL_val2 = NLL_val2 + calc_NLL(thetaNN_l[[i]], parents_l_val2[[i]], target_l_val2[[i]])$numpy()
-}
-loss[(length(loss)-10):length(loss)]
-NLL_train
-
-NLL_val 
-loss_val[(length(loss_val)-10):length(loss_val)]
+load_weights(epoch = EPOCHS, l)
 
 ##########. Checking obs fit the marginals 
 plot_obs_fit(train_data$parents, train_data$target, thetaNN_l, name='Training')

@@ -389,6 +389,47 @@ get_x = function(net, parents, z){
   return(as.numeric(res$numpy()))
 }
 
+########### Loading #########
+load_weights = function(epoch, l){
+  printf("Loading previously stored weight of epoch: %d\n", epoch)
+  e = epoch
+  loss = l[[1]]
+  loss_val = l[[2]]
+  
+  #e = EPOCHS
+  for (i in 1:ncol(val$A)){
+    fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.rds")
+    thetaNN_l[[i]]$set_weights(readRDS(fn))
+    
+    checksum = calculate_checksum(thetaNN_l[[i]]$get_weights())
+    
+    fn_checksum = paste0(dirname,train$name, "_nn", i, "_e", e, "_checksum.txt")
+    file_content <- readLines(fn_checksum)
+    if (checksum == file_content){
+      printf('Layer %d checksum consistent with stored \n',i)
+    } else {
+      printf('Layer %d checksum calculated %s\n',i, file_content)
+      printf('Layer %d checksum stored %s\n',i, file_content)
+      stop('checksum missmatch')
+    }
+  }
+  
+  NLL_val = NLL_train = NLL_val2 = 0  
+  for(i in 1:ncol(val$A)) { # Assuming that thetaNN_l, parents_l and target_l have the same length
+    NLL_train = NLL_train + calc_NLL(thetaNN_l[[i]], train_data$parents[[i]], train_data$target[[i]])$numpy()
+    NLL_val = NLL_val + calc_NLL(thetaNN_l[[i]], val_data$parents[[i]], val_data$target[[i]])$numpy()
+    #NLL_val2 = NLL_val2 + calc_NLL(thetaNN_l[[i]], parents_l_val2[[i]], target_l_val2[[i]])$numpy()
+  }
+  
+  printf('loss loaded training:     %f \n', loss[length(loss)])
+  printf('loss calculated training: %f \n', NLL_train)
+  
+  printf('loss loaded validation:     %f \n', loss_val[length(loss_val)])
+  printf('loss calculated validation: %f \n', NLL_val)
+} 
+
+
+
 
 
 
