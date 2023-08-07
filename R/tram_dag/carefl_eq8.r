@@ -4,7 +4,9 @@ DEBUG = FALSE
 DEBUG_NO_EXTRA = FALSE
 USE_EXTERNAL_DATA = FALSE 
 
-SUFFIX = 'runLaplace_M10_C0.5_N2500'
+
+SUFFIX = 'runLaplace_M10_C0.5_long30K_M30'
+EPOCHS = 30000
 
 DROPBOX = 'C:/Users/sick/dl Dropbox/beate sick/IDP_Projekte/DL_Projekte/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 DROPBOX = '~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/'
@@ -12,6 +14,8 @@ if (rstudioapi::isAvailable()) {
   context <- rstudioapi::getSourceEditorContext()
   this_file <- context$path
   print(this_file)
+} else{
+  this_file = "~/Documents/GitHub/causality/R/tram_dag/carefl_eq8.r"
 }
 
 #######################
@@ -21,7 +25,7 @@ latent_dist = tfd_logistic(loc=0, scale=1)
 #latent_dist = tfd_truncated_normal(loc=0., scale=1.,low=-4,high = 4)
 hist(latent_dist$sample(1e5)$numpy(),100, freq = FALSE, main='Samples from Latent')
 
-M = 10
+M = 30
 len_theta = M + 1
 bp = make_bernp(len_theta)
 
@@ -117,9 +121,9 @@ val_data = split_data(val$A, val$df_scaled)
 
 
 ###### Training Step #####
-optimizer= tf$keras$optimizers$Adam(learning_rate=0.0001)
+optimizer= tf$keras$optimizers$Adam(learning_rate=0.001)
 l = do_training(train$name, thetaNN_l = thetaNN_l, train_data = train_data, val_data = val_data,
-                SUFFIX, epochs = 500,  optimizer=optimizer)
+                SUFFIX, epochs = EPOCHS,  optimizer=optimizer)
 
 ### Save Script
 dirname = paste0(DROPBOX, "exp/", train$name, "/", SUFFIX, "/")
@@ -141,7 +145,7 @@ thetaNN_l[[4]]$get_weights()[[2]]
 #thetaNN_l[[1]]$set_weights(readRDS('/tmp/dumm1.rds'))
 
 #Loading data from epoch e
-e = 500
+e = EPOCHS
 for (i in 1:ncol(val$A)){
   #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")
   #thetaNN_l[[i]]$load_weights(path.expand(fn))
@@ -202,7 +206,7 @@ for (i in 1:length(dox_origs)){
   dox_orig = dox_origs[i]
   #dox_orig = -2 # we expect E(X3|X1=dox_orig)=dox_orig
   dox=scale_value(train$df_orig, col=1L, dox_orig)
-  num_samples = 1142L
+  num_samples = 5142L
   dat_do_x_s = dox1_eq8(dox, thetaNN_l, num_samples = num_samples)
   
   #
@@ -212,7 +216,7 @@ for (i in 1:length(dox_origs)){
   #res_med_x4[i] = median(df[,4]$numpy())
   
   
-  d = dgp(1000L, coeffs = coeffs, doX1=dox_orig)
+  d = dgp(5000L, coeffs = coeffs, doX1=dox_orig)
   res_scm_x3[i] = mean(d$df_orig[,3]$numpy())
   res_scm_x4[i] = mean(d$df_orig[,4]$numpy())
 }

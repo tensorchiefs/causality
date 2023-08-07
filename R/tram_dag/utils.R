@@ -48,7 +48,7 @@ make_thetaNN = function(A, parents_l){
 }
 
 
-update_learning_rate <- function(optimizer, current_loss, factor=0.1, patience=5, min_lr=1e-7) {
+update_learning_rate <- function(optimizer, current_loss, factor=0.1, patience=50, min_lr=1e-7) {
   if (!exists("best_loss")) {
     assign("best_loss", current_loss, envir=globalenv())
     assign("wait", 0, envir=globalenv())
@@ -262,7 +262,11 @@ make_model = function(len_theta, parent_dim){
   return (model)
 }
 
-do_training = function(name, thetaNN_l, train_data, val_data, SUFFIX, epochs=200, optimizer= tf$keras$optimizers$Adam(learning_rate=0.001)){
+do_training = function(name, thetaNN_l, train_data, val_data, 
+                       SUFFIX, epochs=200, 
+                       optimizer= tf$keras$optimizers$Adam(learning_rate=0.001),
+                       dynamic_lr = TRUE
+                       ){
   parents_l = train_data$parents
   target_l = train_data$target
 
@@ -287,9 +291,11 @@ do_training = function(name, thetaNN_l, train_data, val_data, SUFFIX, epochs=200
       }
       loss_val[e] = NLL_val
       
-      update_learning_rate(optimizer,NLL_val)
+      if (dynamic_lr){
+        update_learning_rate(optimizer,NLL_val)
+      }
       printf("e:%f  Train: %f, Val: %f \n",e, l$NLL$numpy(), NLL_val)
-      if (e %% 100 == 0) {
+      if (e %% 10 == 0) {
         
         for (i in 1:ncol(val$A)){
           #printf('Layer %d checksum: %s \n',i, calculate_checksum(thetaNN_l[[i]]$get_weights()))

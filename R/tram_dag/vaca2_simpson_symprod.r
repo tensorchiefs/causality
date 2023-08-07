@@ -3,8 +3,8 @@ library(R.utils)
 DEBUG = FALSE
 DEBUG_NO_EXTRA = FALSE
 USE_EXTERNAL_DATA = FALSE 
-SUFFIX = 'run_triangle_NL_dynamik_long10k_M30_run01'
-EPOCHS = 10000
+SUFFIX = 'run_simpson_symprod_04'
+EPOCHS = 1000
 
 DROPBOX = 'C:/Users/sick/dl Dropbox/beate sick/IDP_Projekte/DL_Projekte/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 DROPBOX = '~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/'
@@ -26,8 +26,6 @@ M = 30
 len_theta = M + 1
 bp = make_bernp(len_theta)
 
-
-
 ######################################
 ############# DGP ###############
 ######################################
@@ -46,27 +44,27 @@ dgp <- function(n_obs, coeffs = NULL, doX1=NA, dat_train=NULL, seed=NA, file=NUL
     #X_4 <- data[,4]
     #n_obs=length(X_4)
   } else{
-    X_1 = 1 + rnorm(n_obs)
+    X_1 = rnorm(n_obs)
     if (is.na(doX1) == FALSE){
       X_1 = X_1 * 0 + doX1
     }
-    X_2 = 2*X_1^2 + rnorm(n_obs)
-    X_3 = 20./(1 + exp(-X_2^2 + X_1)) + rnorm(n_obs)
+    X_2 = 2*tanh(2*X_1) + 1/sqrt(10) * rnorm(n_obs)
+    X_3 = 0.5*X_1 * X_2 + 1/sqrt(2) * rnorm(n_obs)
+    X_4 = tanh(1.5*X_1) + sqrt(3/10) * rnorm(n_obs)
   }
   
-  dat.s =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3)
+  dat.s =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3, x4=X_4)
   dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
-  A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
+  A <- matrix(c(0, 1, 1, 1, 0,0,1,0, 0,0,0,0, 0,0,0,0), nrow = 4, ncol = 4, byrow = TRUE)
   
   if (is.null(dat_train)){
     scaled = scale_df(dat.tf)
   } else{
     scaled = scale_validation(dat_train, dat.tf)
   }
-  return(list(df_orig=dat.tf, df_scaled = scaled, coef=coeffs, A=A, name='vaca2_triangle_nl'))
+  return(list(df_orig=dat.tf, df_scaled = scaled, coef=coeffs, A=A, name='vaca2_simpson_symprod'))
 } 
 
-#Data from CAREFL Fig 5
 if (USE_EXTERNAL_DATA){
   stop("Not implemted (no external data)")
 } else{
@@ -74,10 +72,11 @@ if (USE_EXTERNAL_DATA){
 }
 
 pairs(train$df_orig$numpy())
-par(mfrow=c(1,3))
+par(mfrow=c(2,2))
 hist(train$df_orig$numpy()[,1],100)
-hist(train$df_orig$numpy()[,3],100)
 hist(train$df_orig$numpy()[,2],100)
+hist(train$df_orig$numpy()[,3],100)
+hist(train$df_orig$numpy()[,4],100)
 par(mfrow=c(1,1))
 pairs(train$df_scaled$numpy())
 train$A
@@ -100,7 +99,7 @@ val_data = split_data(val$A, val$df_scaled)
 ###### Training Step #####
 optimizer = tf$keras$optimizers$Adam(learning_rate=0.001)
 l = do_training(train$name, thetaNN_l = thetaNN_l, train_data = train_data, val_data = val_data,
-                SUFFIX, epochs = EPOCHS,  optimizer=optimizer)
+                SUFFIX, epochs = EPOCHS,  optimizer=optimizer, dynamic_lr = TRUE)
 
 ### Save Script
 dirname = paste0(DROPBOX, "exp/", train$name, "/", SUFFIX, "/")
@@ -108,7 +107,7 @@ file.copy(this_file, dirname)
 
 loss = l[[1]]
 loss_val = l[[2]]
-plot(loss, type='l', ylim=c(-4.5,-4.3))
+plot(loss, type='l', ylim=c(-4.5,-3.0))
 points(loss_val, col='green')
 
 
@@ -148,33 +147,37 @@ loss_val[(length(loss_val)-10):length(loss_val)]
 plot_obs_fit(train_data$parents, train_data$target, thetaNN_l, name='Training')
 plot_obs_fit(val_data$parents, val_data$target, thetaNN_l, name='Validation')
 
-
-d = dgp(1000L, doX1=1)
-mean(d$df_orig[,3]$numpy())
-
 ############################### Do X via Flow ########################
 #Samples from Z give X=doX
 dox1 = function(doX, thetaNN_l, num_samples){
   doX_tensor = doX * tf$ones(shape=c(num_samples,1L),dtype=tf$float32) 
   
   x2_samples = sample_from_target(thetaNN_l[[2]], doX_tensor)
+  x4_samples = sample_from_target(thetaNN_l[[4]], doX_tensor)
   
   parents_x3 = tf$concat(list(doX_tensor, x2_samples), axis=1L)
   x3_samples = sample_from_target(thetaNN_l[[3]], parents_x3)
   
-  return(matrix(c(doX_tensor$numpy(),x2_samples$numpy(), x3_samples$numpy()), ncol=3))
+  
+  return(matrix(c(doX_tensor$numpy(),x2_samples$numpy(), 
+                  x3_samples$numpy(), x4_samples$numpy()), ncol=4))
 }
 
 
 
 ########################
 # Do Interventions on x1 #####
-dox_origs = seq(-3, 4, by = 0.5)
+dox_origs = seq(-2, 2, by = 0.5)
 #dox_origs = seq(0, 1, by = 1)
 num_samples = 1142L
-inter_mean_dgp_x2 = inter_mean_dgp_x3 = inter_mean_ours_x2 = inter_mean_ours_x3 = NA*dox_origs
+inter_mean_dgp_x2 = inter_mean_dgp_x3 = 
+  inter_mean_dgp_x4 = inter_mean_ours_x2 = 
+  inter_mean_ours_x3 = inter_mean_ours_x4 = NA*dox_origs
 
-inter_dgp_x2 = inter_dgp_x3 = inter_ours_x2 = inter_ours_x3 = matrix(NA, nrow=length(dox_origs), ncol=num_samples)
+inter_dgp_x2 = inter_dgp_x3 = inter_dgp_x4 =
+  inter_ours_x2 = inter_ours_x3 = inter_ours_x4 = 
+  matrix(NA, nrow=length(dox_origs), ncol=num_samples)
+
 for (i in 1:length(dox_origs)){
   dox_orig = dox_origs[i]
   #dox_orig = -2 # we expect E(X3|X1=dox_orig)=dox_orig
@@ -185,37 +188,46 @@ for (i in 1:length(dox_origs)){
   df = unscale(train$df_orig, dat_do_x_s)
   inter_ours_x2[i,] = df$numpy()[,2]
   inter_ours_x3[i,] = df$numpy()[,3]
+  inter_ours_x4[i,] = df$numpy()[,4]
+  
   inter_mean_ours_x2[i] = mean(df[,2]$numpy())
   inter_mean_ours_x3[i] = mean(df[,3]$numpy())
-  #res_med_x4[i] = median(df[,4]$numpy())
+  inter_mean_ours_x4[i] = mean(df[,4]$numpy())
   
+  #res_med_x4[i] = median(df[,4]$numpy())
   
   d = dgp(num_samples,doX1=dox_orig)
   inter_mean_dgp_x2[i] = mean(d$df_orig[,2]$numpy())
   inter_mean_dgp_x3[i] = mean(d$df_orig[,3]$numpy())
+  inter_mean_dgp_x4[i] = mean(d$df_orig[,4]$numpy())
+  
   inter_dgp_x2[i,] = d$df_orig[,2]$numpy()
   inter_dgp_x3[i,] = d$df_orig[,3]$numpy()
+  inter_dgp_x4[i,] = d$df_orig[,4]$numpy()
 }
 
-#In 
-df = data.frame(dox=numeric(0),x2=numeric(0),x3=numeric(0), type=character(0))
-for (step in c(1,3,5,6,10)){
+#Interventional Distributions 
+df = data.frame(dox=numeric(0),x2=numeric(0),x3=numeric(0), x4=numeric(0),type=character(0))
+for (step in c(1,3,5,6,9)){
     df = rbind(df, data.frame(
       dox = dox_origs[step],
       x2 = inter_dgp_x2[step,],
       x3 = inter_dgp_x3[step,],
+      x4 = inter_dgp_x4[step,],
       type = 'simu'
     ))
     df = rbind(df, data.frame(
       dox = dox_origs[step],
       x2 = inter_ours_x2[step,],
       x3 = inter_ours_x3[step,],
+      x4 = inter_ours_x4[step,],
       type = 'ours'
     )
   )
 }
 ggplot(df) + geom_density(aes(x=x2, col=type, linetype=type)) + facet_grid(~as.factor(dox))
 ggplot(df) + geom_density(aes(x=x3, col=type, linetype=type)) + facet_grid(~as.factor(dox))
+ggplot(df) + geom_density(aes(x=x4, col=type, linetype=type)) + facet_grid(~as.factor(dox))
 
 #X3
 x1dat = data.frame(x=train$df_orig$numpy()[,1])
@@ -236,8 +248,9 @@ df %>%
   ggtitle(paste0('MSE ours vs Simulation: '))
 
 #ATE from 0 to 1 (Hacky check that...)
-dox_origs[7] #0
-dox_origs[9] #1
+dox_origs
+dox_origs[5] #0
+dox_origs[7] #1
 
 ATE_our = df$ours[9] - df$ours[7] 
 ATE_simu = df$Simulation_DGP[9] - df$Simulation_DGP[7] 
@@ -254,48 +267,57 @@ ATE_our - ATE_simu
 
 #Creating a typical value 
 if (FALSE){
-  X1 = 1.
+  X1 = -0.5
   x1 = scale_value(dat_train_orig = train$df_orig, col = 1, value = X1)$numpy()
   x2 = get_x(thetaNN_l[[2]], x1, 0.)
   x3 = get_x(thetaNN_l[[3]], c(x1,x2), 0.)
-  df = data.frame(x1=0,x2=as.numeric(x2), x3=as.numeric(x3))
+  x4 = get_x(thetaNN_l[[4]], c(x1), 0.)
+  df = data.frame(x1=0,x2=as.numeric(x2), x3=as.numeric(x3),x4=as.numeric(x4))
   unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
   X2 = unscaled[2]
   X3 = unscaled[3]
+  X4 = unscaled[4]
   
   dat = val$df_orig$numpy()
-  point = c(X1,X2,X3)
+  point = c(X1,X2,X3,X4)
   distances <- apply(dat, 1, function(row) sqrt(sum((row - point)^2)))
   # Find the index of the closest row
   closest_row_index <- which.min(distances)
   # Retrieve the closest row
   closest_row <- dat[closest_row_index,]
-  closest_row #1.081913  1.929156 18.40600
+  closest_row #-0.4758347 -1.4321059  0.3376575 -0.5187235
 } else{
-  X1 = 1.081913
-  X2 = 1.929156
-  X3 = 18.406000
+  X1 = -0.4758347
+  X2 = -1.4321059 
+  X3 = 0.3376575
+  X4 = -0.5187235
 }
 
 ###### CF Theoretical (assume we know the complete SCM) #####
 
 #Abduction these are the Us that correspond the observed values
-U1 = X1 - 1
-U2 = X2 - 2*X1^2
-U3 = X3 - 20./(1 + exp(-X2^2 + X1)) 
+U1 = X1 
+U2 = (X2 - 2*tanh(2*X1))*sqrt(10)
+U3 = (X3 - 0.5*X1*X2)*sqrt(2)
+U4 = (X4 - tanh(1.5*X1)) * sqrt(10/3)
 
 #X1 --> alpha
 cf_do_x1_dgp = function(alpha){
   X_1 = alpha
-  X_2 = 2*X_1^2 + U2 
-  X_3 = 20./(1 + exp(-X_2^2 + X_1)) + U3
-  return(data.frame(X1=X_1,X2=X_2,X3=X_3))
+  X_2 = 2*tanh(2*X_1) + 1/sqrt(10) * U2
+  X_3 = 0.5*X_1 * X_2 + 1/sqrt(2) * U3
+  X_4 = tanh(1.5*X_1) + sqrt(3/10) * U4
+  return(data.frame(X1=X_1,X2=X_2,X3=X_3, X4=X_4))
 }
 
 #Constistency
 cf_dgp_cons = cf_do_x1_dgp(X1)
 abs(cf_dgp_cons$X2-X2) #~1e-16 Consistency
 abs(cf_dgp_cons$X3-X3) #~1e-16 Consistency
+abs(cf_dgp_cons$X4-X4) #~1e-16 Consistency
+cf_do_x1_dgp(0)
+cf_do_x1_dgp(1)
+
 alpha = seq(-3,3,0.1)
 
 ###### CF From our model #####
@@ -307,33 +329,39 @@ cf_do_x1_ours = function(alpha){
   x1 = scale_value(dat_train_orig = train$df_orig, col = 1, value = X1)$numpy()
   x2 = scale_value(dat_train_orig = train$df_orig, col = 2, value = X2)$numpy()
   x3 = scale_value(dat_train_orig = train$df_orig, col = 3, value = X3)$numpy()
+  x4 = scale_value(dat_train_orig = train$df_orig, col = 4, value = X4)$numpy()
 
   # Abduction Getting the relevant latent variable
-  z2 =  get_z(thetaNN_l[[2]], x1, x2)
-  z3 =  get_z(thetaNN_l[[3]], c(x1, x2), x3)
+  #Z1 Not needed later
+  #z1 = get_z(thetaNN_l[[1]], parents = 1L, x=x2)
+  z2 =  get_z(thetaNN_l[[2]], parents = x1, x=x2)
+  z3 =  get_z(thetaNN_l[[3]], parents = c(x1, x2), x=x3)
+  z4 =  get_z(thetaNN_l[[4]], parents = x1, x=x4)
 
-  ## Action
+  ## Action and prediction
   a = scale_value(dat_train_orig = train$df_orig, col = 1, value = alpha)$numpy()
   x2_CF = get_x(net=thetaNN_l[[2]], parents = a, z2) #X1-->a but the same latent variable
   x3_CF = get_x(net=thetaNN_l[[3]], parents = c(a, x2_CF), z3) 
+  x4_CF = get_x(net=thetaNN_l[[4]], parents = a, z4) 
 
-  df = data.frame(x1=x1, x2=as.numeric(x2_CF),x3=as.numeric(x3_CF))
+  df = data.frame(x1=x1, x2=as.numeric(x2_CF),x3=as.numeric(x3_CF),x4=as.numeric(x4_CF))
   unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
   return(unscaled)
 }
 
 #Consistency
-cf_do_x1_dgp(X1) - cf_do_x1_ours(X1)
+cf_do_x1_ours(X1) - c(X1, X2, X3, X4)
+
 
 ## Creating Results for do(x1)
 df = data.frame()
 for (a_org in c(seq(-3,3,0.2),X1)){
   print(a_org)
-  dpg = cf_do_x1_dgp(a_org)
-  df = bind_rows(df, data.frame(x1=a_org, X2=dpg[2], X3=dpg[3], type='DGP'))
+  dgp = cf_do_x1_dgp(a_org)
+  df = bind_rows(df, data.frame(x1=a_org, X2=dgp[2], X3=dgp[3],X4=dgp[4], type='DGP'))
   
   cf_our = cf_do_x1_ours(a_org)
-  df = bind_rows(df, data.frame(x1=a_org, X2=cf_our[2], X3=cf_our[3], type='OURS'))
+  df = bind_rows(df, data.frame(x1=a_org, X2=cf_our[2], X3=cf_our[3], X4=dgp[4], type='OURS'))
 }
 
 ggplot(df) +
@@ -347,6 +375,11 @@ ggplot(df) +
   geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X3, color=type)) + 
   xlab('would x1 be alpha')  
 #
+
+ggplot(df) +
+  geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X4, color=type)) +
+  geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X4, color=type)) + 
+  xlab('would x1 be alpha')  
 
 
 
