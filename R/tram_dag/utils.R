@@ -220,6 +220,7 @@ sample_from_target = function(thetaNN, parents){
   return(target_sample)
 }
 
+
 unscale = function(dat_train_orig, dat_scaled){
   # Get original min and max
   orig_min = tf$reduce_min(dat_train_orig, axis=0L)
@@ -341,6 +342,8 @@ calculate_checksum <- function(weights) {
 }
 
 plot_obs_fit = function(parents_l, target_l, thetaNN_l,name){
+"' Please note that this samples are generated using the **given observed** parents
+"
   for (i in 1:length(parents_l)){
     parents = parents_l[[i]]
     targets = target_l[[i]]
@@ -412,6 +415,7 @@ is_upper_triangular <- function(mat) {
   return(TRUE)
 }
 
+##### Do Interventions ########
 #' Draws samples from a tramDAG using the do-operation (in scaled space!)
 #'
 #' @param thetaNN_l The list of weights of the networks
@@ -419,7 +423,7 @@ is_upper_triangular <- function(mat) {
 #' @param doX The variables on which the do operation should be done and the 
 #' strength of the intervention (in the scaled space). NA indicates no interaction
 #' @num_samples  The number of samples to be drawn
-#' @return Returns the squared value of x.
+#' @return Returns samples for the defined intervention (num_samples x N)
 #' 
 #' @examples
 #' do(thetaNN_l, doX = c(0.5, NA, NA), 1000) draws 1000 samples from do(x_1=0.5)
@@ -433,7 +437,7 @@ do = function(thetaNN_l, A, doX = c(0.5, NA, NA, NA), num_samples=1042){
   stopifnot(is_upper_triangular(A)) #A needs to be upper triangular
   stopifnot(length(thetaNN_l) == N) #Same number of variables
   stopifnot(nrow(A) == N)           #Same number of variables
-  stopifnot(sum(is.na(doX)) >= N-1) #Currently only one Variable with do
+  stopifnot(sum(is.na(doX)) >= N-1) #Currently only one Variable with do(might also work with more but not tested)
   
   # Looping over the variables assuming causal ordering
   #Sampling (or replacing with do) of the current variable x
@@ -461,6 +465,60 @@ do = function(thetaNN_l, A, doX = c(0.5, NA, NA, NA), num_samples=1042){
   
   return(tf$concat(xl, axis = 1L))
 }
+
+##### CF Interventions ########
+#' Calculates the counter-factual values from a tramDAG using(in scaled space!)
+#'
+#' @param thetaNN_l The list of weights of the networks
+#' @param A The Adjacency Matrix (first column is parents for x1 and hence empty)
+#' @param Xobs the observed factual value (in the scaled space).
+#' @param doX The variables on which the counter factual do operation should be done and the 
+#' strength of the intervention (in the scaled space). NA indicates no interaction
+#' @num_samples  The number of samples to be drawn
+#' @return Returns samples for the defined intervention (num_samples x N)
+
+computeCF = function(thetaNN_l, A, xobs, cfdoX = c(0.5, NA, NA, NA)){
+  N = length(cfdoX)
+  
+  #### Checking the input
+  stopifnot(is_upper_triangular(A)) #A needs to be upper triangular
+  stopifnot(length(thetaNN_l) == N) #Same number of variables
+  stopifnot(nrow(A) == N)           #Same number of variables
+  stopifnot(length(xobs) == N)           #Same number of variables
+  stopifnot(sum(is.na(cfdoX)) >= N-1) #Currently only one Variable with do (might also work with more but not tested)
+  
+  ### Abduction Getting the latent variable
+  zobs_l = list() 
+  for (i in 1:N){
+    parents = which(A[,i] == 1)
+    if (length(parents) == 0) { #Root node?
+      z = get_z(thetaNN_l[[i]], parents = 1L, x=xobs[i])
+    } else { #No root node ==> the parents are present 
+      z = get_z(thetaNN_l[[i]], parents = tf$concat(xobs[parents],axis=0L), x=xobs[i])
+    }
+    zobs_l = c(zobs_l, z)
+  }
+  
+  ## Action: Replace the observation with the counterfactuals ones where applicable
+  x_cf = xobs 
+  cfdo_idx = !is.na(cfdoX)
+  x_cf[cfdo_idx] = cfdoX[cfdo_idx]
+  
+  ## Prediction: Predict the remaining ones.
+  for (i in which(!cfdo_idx)){
+    parents = which(A[,i] == 1)
+    if (length(parents) == 0) { #Root node?
+      x = get_x(thetaNN_l[[i]], parents = 1L, z=zobs_l[i]) #Will be the same as x_obs
+    } else{
+      x = get_x(net=thetaNN_l[[i]], parents = tf$concat(x_cf[parents],axis=0L), zobs_l[i])
+    }
+    x_cf[i] = x
+  }
+  
+  return(x_cf)
+}
+
+
 
 
 ########### Loading #########

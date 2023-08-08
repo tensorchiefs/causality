@@ -39,8 +39,7 @@ dgp <- function(n_obs, coeffs = NULL, doX1=NA, dat_train=NULL, seed=NA, file=NUL
     stop("Not implemented yet")
     #data <- read.csv(file, header = FALSE)
     #X_1 <- data[,1]
-    #X_2 <- data[,2]
-    #X_3 <- data[,3]
+    #...
     #X_4 <- data[,4]
     #n_obs=length(X_4)
   } else{
@@ -229,17 +228,17 @@ if (FALSE){
   X1 = 1.081913
   X2 = 1.929156
   X3 = 18.406000
+  X_obs = c(X1, X2, X3)
 }
 
 ###### CF Theoretical (assume we know the complete SCM) #####
-
-#Abduction these are the Us that correspond the observed values
-U1 = X1 - 1
-U2 = X2 - 2*X1^2
-U3 = X3 - 20./(1 + exp(-X2^2 + X1)) 
-
-#X1 --> alpha
 cf_do_x1_dgp = function(alpha){
+  #Abduction these are the Us that correspond the observed values
+  U1 = X1 - 1
+  U2 = X2 - 2*X1^2
+  U3 = X3 - 20./(1 + exp(-X2^2 + X1)) 
+  
+  #X1 --> alpha
   X_1 = alpha
   X_2 = 2*X_1^2 + U2 
   X_3 = 20./(1 + exp(-X_2^2 + X_1)) + U3
@@ -252,41 +251,27 @@ abs(cf_dgp_cons$X2-X2) #~1e-16 Consistency
 abs(cf_dgp_cons$X3-X3) #~1e-16 Consistency
 alpha = seq(-3,3,0.1)
 
-###### CF From our model #####
-# Scaling the observed data so that it can be used with the networks
-cf_do_x1_ours = function(alpha){
-  
-  # Abduction (no need for alpha)
-  ## Scaling of the observed variables
-  x1 = scale_value(dat_train_orig = train$df_orig, col = 1, value = X1)$numpy()
-  x2 = scale_value(dat_train_orig = train$df_orig, col = 2, value = X2)$numpy()
-  x3 = scale_value(dat_train_orig = train$df_orig, col = 3, value = X3)$numpy()
-
-  # Abduction Getting the relevant latent variable
-  z2 =  get_z(thetaNN_l[[2]], x1, x2)
-  z3 =  get_z(thetaNN_l[[3]], c(x1, x2), x3)
-
-  ## Action
-  a = scale_value(dat_train_orig = train$df_orig, col = 1, value = alpha)$numpy()
-  x2_CF = get_x(net=thetaNN_l[[2]], parents = a, z2) #X1-->a but the same latent variable
-  x3_CF = get_x(net=thetaNN_l[[3]], parents = c(a, x2_CF), z3) 
-
-  df = data.frame(x1=x1, x2=as.numeric(x2_CF),x3=as.numeric(x3_CF))
-  unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
-  return(unscaled)
-}
-
-#Consistency
-cf_do_x1_dgp(X1) - cf_do_x1_ours(X1)
+##### Our Approach ####
+xobs = scale_validation(train$df_orig, X_obs)$numpy()
+computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, NA,NA)) - xobs
+computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(xobs[1], NA,NA)) - xobs
+computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, xobs[2],NA)) - xobs
+computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, NA,xobs[3])) - xobs
 
 ## Creating Results for do(x1)
 df = data.frame()
-for (a_org in c(seq(-3,3,0.2),X1)){
-  print(a_org)
+num_samples = 1000
+for (a_org in c(seq(-3,3,0.05),X1)){
   dpg = cf_do_x1_dgp(a_org)
   df = bind_rows(df, data.frame(x1=a_org, X2=dpg[2], X3=dpg[3], type='DGP'))
-  
-  cf_our = cf_do_x1_ours(a_org)
+}
+
+for (a_org in c(seq(-3,3,0.2),X1)){
+  a = scale_value(train$df_orig, 1L, a_org)$numpy()
+  printf("a_org %f a %f \n", a_org, a)
+  #cf_our = cf_do_x1_ours(a_org)
+  cf_our = computeCF(thetaNN_l = thetaNN_l, A = train$A, cfdoX = c(a,NA,NA), xobs = xobs)
+  cf_our = unscale(train$df_orig, matrix(cf_our, nrow=1))$numpy()
   df = bind_rows(df, data.frame(x1=a_org, X2=cf_our[2], X3=cf_our[3], type='OURS'))
 }
 

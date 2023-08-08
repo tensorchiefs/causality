@@ -7,7 +7,7 @@ USE_EXTERNAL_DATA = FALSE
 
 SUFFIX = 'runLaplace_M10_C0.5_long30K_M30'
 EPOCHS = 30000
-
+nTrain = 2500
 DROPBOX = 'C:/Users/sick/dl Dropbox/beate sick/IDP_Projekte/DL_Projekte/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 DROPBOX = '~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 if (rstudioapi::isAvailable()) {
@@ -23,7 +23,7 @@ if (rstudioapi::isAvailable()) {
 latent_dist = tfd_logistic(loc=0, scale=1)
 #latent_dist = tfd_normal(loc=0, scale=1)
 #latent_dist = tfd_truncated_normal(loc=0., scale=1.,low=-4,high = 4)
-hist(latent_dist$sample(1e5)$numpy(),100, freq = FALSE, main='Samples from Latent')
+#hist(latent_dist$sample(1e5)$numpy(),100, freq = FALSE, main='Samples from Latent')
 
 M = 30
 len_theta = M + 1
@@ -44,8 +44,8 @@ rlaplace <- function(n, location = 0, scale = 1) {
   return(draws)
 }
 
-hist(rlaplace(10000),100)
-sd(rlaplace(10000))
+#hist(rlaplace(10000),100)
+#sd(rlaplace(10000))
 
 dgp <- function(n_obs, coeffs, doX1=NA, dat_train=NULL, seed=NA, file=NULL) {
   if (is.na(seed) == FALSE){
@@ -97,7 +97,7 @@ if (USE_EXTERNAL_DATA){
   file = "~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/Carefl_fig5.csv"
   train = dgp(file = file, coeffs = coeffs, seed=42)
 } else{
-  train = dgp(2500, coeffs = coeffs, seed=42)
+  train = dgp(nTrain, coeffs = coeffs, seed=42)
 }
 
 pairs(train$df_orig$numpy())
@@ -145,9 +145,6 @@ plot_obs_fit(val_data$parents, val_data$target, thetaNN_l, name='Validation')
 
 
 ############################### Do X via Flow ########################
-df2t = do(thetaNN_l, train$A, doX=c(0.5, NA, NA, NA), num_samples=1042)
-df2 = as.matrix(df2t$numpy())
-
 
 ##############################
 # Do Interventions on x1 #####
@@ -212,137 +209,138 @@ data.frame(
 
 
 ###############################################
-# Counterfactual  
+##### Counterfactual  #########################
 ###############################################
-
-# CF of X4 given X1=alpha ###
+### CF of X4 given X1=alpha ####
 
 # Attention, we don't have the same C2 as in the paper
-train$df_orig[2,]
-
-#Paper
-X1 = 2
-X2 = 1.5
-X3 = 0.81
-X4 = -0.28
+# train$df_orig[2,]
+# #Paper
+# X1 = 2
+# X2 = 1.5
+# X3 = 0.81
+# X4 = -0.28
 
 #Creating a typical value 
-X1 = 0.5
-X2 = -0.5
-x1 = scale_value(dat_train_orig = train$df_orig, col = 1, value = X1)$numpy()
-x2 = scale_value(dat_train_orig = train$df_orig, col = 1, value = X2)$numpy()
-x3 = get_x(thetaNN_l[[3]], c(x1,x2), 0.)
-x4 = get_x(thetaNN_l[[4]], c(x1,x2), 0.)
-df = data.frame(x1=0,x2=0,x3=as.numeric(x3), x4=as.numeric(x4))
-unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
-X3 = unscaled[3]
-X4 = unscaled[4]
-
-
-###### Theoretical (assume we know the complete SCM)
-# X_3 <- X_1 + coeffs[1] * (X_2^3)  + U3
-# X_4 <- -X_2 + coeffs[2] * (X_1^2) + U4
-
-U1 = X1
-U2 = X2
-U3 = X3 - X1 - coeffs[1] * X2^3
-U4 = X4 - coeffs[2]*X1^2 + X2
-
-#X1 --> alpha
-inter_x4_theo = function(alpha){
-   return(coeffs[2]*alpha^2 - U2 + U4)
-   #return(coeffs[2]*alpha^2 - coeffs[2] * X1^2 + X4)
+if (FALSE){
+  X1 = 0.5
+  X2 = -0.5
+  x1 = scale_value(dat_train_orig = train$df_orig, col = 1, value = X1)$numpy()
+  x2 = scale_value(dat_train_orig = train$df_orig, col = 1, value = X2)$numpy()
+  x3 = get_x(thetaNN_l[[3]], c(x1,x2), 0.)
+  x4 = get_x(thetaNN_l[[4]], c(x1,x2), 0.)
+  df = data.frame(x1=0,x2=0,x3=as.numeric(x3), x4=as.numeric(x4))
+  unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
+  X3 = unscaled[3]
+  X4 = unscaled[4]
+} else{
+  X1 = 0.5
+  X2 = -0.5
+  X3 = -0.243927
+  X4 = 1.137823
+  X_obs = c(X1, X2, X3, X4)
 }
 
-abs(inter_x4_theo(X1)-X4) #~1e-16 Consistency
-inter_x4_theo(0) #should be -3.08
+cf_do_x1_dgp = function(alpha){
+    ###### Theoretical (assume we know the complete SCM)
+    # X_3 <- X_1 + coeffs[1] * (X_2^3)  + U3
+    # X_4 <- -X_2 + coeffs[2] * (X_1^2) + U4
+    U1 = X1
+    U2 = X2
+    U3 = X3 - X1 - coeffs[1] * X2^3
+    U4 = X4 - coeffs[2]*X1^2 + X2
+    #X1 --> alpha
+    X_1 = alpha
+    X_2 = U2
+    X_3 = X_1 + coeffs[1] * (X_2^3)  + U3
+    X_4 = -X_2 + coeffs[2] * (X_1^2) + U4
+   return(data.frame(X1=X_1,X2=X_2,X3=X_3,X4=X_4))
+}
 
-alpha = seq(-3,3,0.1)
-plot(alpha, inter_x4_theo(alpha), type='l', xlab='would x1 be alpha', sub=SUFFIX)
+abs(cf_do_x1_dgp(X1)-X_obs) #~1e-16 Consistency
 
 ###### From our model
-# Scaling the observed data so that it can be used with the networks
-x1 = scale_value(dat_train_orig = train$df_orig, col = 1, value = X1)$numpy()
-x2 = scale_value(dat_train_orig = train$df_orig, col = 2, value = X2)$numpy()
-x3 = scale_value(dat_train_orig = train$df_orig, col = 3, value = X3)$numpy()
-x4 = scale_value(dat_train_orig = train$df_orig, col = 4, value = X4)$numpy()
+xobs = scale_validation(train$df_orig, X_obs)$numpy()
+computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, NA,NA,NA)) - xobs
+computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(xobs[1], NA,NA,NA)) - xobs
+computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, xobs[2],NA,NA)) - xobs
+computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, NA,xobs[3],NA)) - xobs
+computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, NA,NA,xobs[4])) - xobs
 
-#Calculation of z4 corresponding to the observed value x1, x2
-#Getting the relevant latent variable
-z4 =  get_z(thetaNN_l[[4]], c(x1, x2), x4)
-#-coeffs[2]*X1 + X2 + X4 #Does not need to be the same
-
-
-## Action
-for (a_org in seq(-3,3,0.2)){
-  a = scale_value(dat_train_orig = train$df_orig, col = 1, value = a_org)$numpy()
-  x4_CF = get_x(net=thetaNN_l[[4]], parents = c(a, x2), z4)
-  df = data.frame(x1=0,x2=0,x3=11, x4=as.numeric(x4_CF))
-  unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
-  points(a_org, unscaled[4], col='green')
+## Creating Results for do(x1)
+df = data.frame()
+for (a_org in c(seq(-3,3,0.05),X1)){
+  dgp = cf_do_x1_dgp(a_org)
+  df = bind_rows(df, data.frame(x1=a_org, X2=dgp[2], X3=dgp[3], X4=dgp[4], type='DGP'))
 }
-points(X1, X4, col='red', pch='+')
-#text(1, -0.28, 'Consistency', col='red')
 
-xorgs = train$df_orig$numpy()[,1]
-rug(xorgs)
-abline(v = quantile(xorgs, c(0.05, 0.95)))
-
-# Transformation
-df <- data.frame(matrix(ncol = 3, nrow = 0))
-xs = tf$expand_dims(tf$linspace(0.0, 1.0, 100L), axis=1L)
-for (a_org in c(seq(-3,3,1), -0.28)){
-  a = scale_value(dat_train_orig = train$df_orig, col = 1, value = a_org)$numpy()
-  parents = tf$constant(matrix(c(a, x2), nrow=1), dtype = tf$float32)
-  net = thetaNN_l[[4]]
-  theta = to_theta(net(parents))
-  hs = eval_h(theta, xs, beta_dist_h = bp$beta_dist_h)
-  df = rbind(df, data_frame(x4=as.numeric(xs), z4 = as.numeric(hs), a_org = a_org))
+for (a_org in c(seq(-3,3,0.2),X1)){
+  a = scale_value(train$df_orig, 1L, a_org)$numpy()
+  printf("a_org %f a %f \n", a_org, a)
+  #cf_our = cf_do_x1_ours(a_org)
+  cf_our = computeCF(thetaNN_l = thetaNN_l, A = train$A, cfdoX = c(a,NA,NA,NA), xobs = xobs)
+  cf_our = unscale(train$df_orig, matrix(cf_our, nrow=1))$numpy()
+  df = bind_rows(df, data.frame(x1=a_org, X2=cf_our[2], X3=cf_our[3], X4=cf_our[4], type='OURS'))
 }
-ggplot(df, aes(x=x4, y=z4, col=as.factor(a_org))) +
-  geom_line() + 
-  geom_hline(yintercept=z4) +
-  geom_vline(xintercept = x4, col='lightgreen') +
-  xlab('x4 (saled)') +
-  ggtitle('Transformation z_4=f(x_4, (alpha, x_2))') +
-  ylim(c(-10,10)) 
 
-hist(train$df_scaled$numpy()[,4])
+ggplot(df) +
+  geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X4, color=type)) +
+  geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X4, color=type)) + 
+  xlab('would x1 be alpha')  
 
-##############################
-# CF of X3 given X2=alpha ####
+ggplot(df) +
+  geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X3, color=type)) +
+  geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X3, color=type)) + 
+  xlab('would x1 be alpha')  
 
-U1 = X1
-U2 = X2
-U3 = X3 - X1 - coeffs[1] * X2^3
-U4 = X4 - coeffs[2]*X1^2 + X2
 
+
+###############################################
+# Counterfactual  
+###############################################
 #X3 --> alpha
-inter_x3_theo = function(alpha){
-  return(X1 + coeffs[1]*alpha^3 + U3)
+cf_do_x2_dgp = function(alpha){
+  ###### Theoretical (assume we know the complete SCM)
+  # X_3 <- X_1 + coeffs[1] * (X_2^3)  + U3
+  # X_4 <- -X_2 + coeffs[2] * (X_1^2) + U4
+  U1 = X1
+  U2 = X2
+  U3 = X3 - X1 - coeffs[1] * X2^3
+  U4 = X4 - coeffs[2]*X1^2 + X2
+  #X1 --> alpha
+  X_1 = U1
+  X_2 = alpha
+  X_3 = X_1 + coeffs[1] * (X_2^3)  + U3
+  X_4 = -X_2 + coeffs[2] * (X_1^2) + U4
+  return(data.frame(X1=X_1,X2=X_2,X3=X_3,X4=X_4))
 }
 
-abs(inter_x3_theo(X2)-X3) #~1e-16 Consistency
-inter_x3_theo(0) 
-alpha = seq(-3,3,length.out=800)
-plot(alpha, inter_x3_theo(alpha), type='l', xlab = 'would x2 be alpha', sub=SUFFIX)
+abs(cf_do_x2_dgp(X2)-X_obs) #~1e-16 Consistency
 
-z3 =  get_z(net=thetaNN_l[[3]], parents = c(x1, x2), x = x3)
-
-## Action
-#a_org = 1.5
-for (a_org in seq(-3,3,0.2)){
-  a = scale_value(dat_train_orig = train$df_orig, col = 2, value = a_org)$numpy()
-  x3_CF = get_x(net=thetaNN_l[[3]], parents = c(x1, a), z3)
-  df = data.frame(x1=0,x2=0,x3=as.numeric(x3_CF), x4=4242)
-  unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
-  points(a_org, unscaled[3], col='green')
+## Creating Results for do(x2)
+df = data.frame()
+for (a_org in c(seq(-3.5,3.5,0.05),X2)){
+  dgp = cf_do_x2_dgp(a_org)
+  df = bind_rows(df, data.frame(x1=dgp[1], X2=a_org, X3=dgp[3], X4=dgp[4], type='DGP'))
 }
-points(X2, X3, col='red', pch='+')
-text(1, .81, 'Consistency', col='red')
-xorgs = train$df_orig$numpy()[,2]
-rug(xorgs)
-abline(v = quantile(xorgs, c(0.05, 0.95)))
+
+for (a_org in c(seq(-3.5,3.5,0.5),X2)){
+  a = scale_value(train$df_orig, 2L, a_org)$numpy()
+  printf("a_org %f a %f \n", a_org, a)
+  cf_our = computeCF(thetaNN_l = thetaNN_l, A = train$A, cfdoX = c(NA,a,NA,NA), xobs = xobs)
+  cf_our = unscale(train$df_orig, matrix(cf_our, nrow=1))$numpy()
+  df = bind_rows(df, data.frame(X1=a_org, X2=cf_our[2], X3=cf_our[3], X4=cf_our[4], type='OURS'))
+}
+
+ggplot(df) +
+  geom_point(data = subset(df, type == "OURS"), aes(x = X2, y = X4, color=type)) +
+  geom_line(data = subset(df, type == "DGP"), aes(x = X2, y = X4, color=type)) + 
+  xlab('would x2 be alpha')  
+
+ggplot(df) +
+  geom_point(data = subset(df, type == "OURS"), aes(x = X2, y = X3, color=type)) +
+  geom_line(data = subset(df, type == "DGP"), aes(x = X2, y = X3, color=type)) + 
+  xlab('would x2 be alpha')  
 
 
 #################
