@@ -138,56 +138,37 @@ points(loss_val, col='green')
 #Loading data from epoch e
 load_weights(epoch = EPOCHS, l)
 
+
 ##########. Checking obs fit the marginals 
 plot_obs_fit(train_data$parents, train_data$target, thetaNN_l, name='Training')
 plot_obs_fit(val_data$parents, val_data$target, thetaNN_l, name='Validation')
 
-#DEBUG_NO_EXTRA = TRUE
-#dd  = sample_from_target(thetaNN_l[[4]], val_data$parents[[4]])
-#hist(x_samples$numpy(),100)
-#stripchart(x_samples$numpy(), method = 'jitter')
-#stripchart(dd$numpy(), method = 'jitter')
-
 
 ############################### Do X via Flow ########################
-#Samples from Z give X=doX
-dox1_eq8 = function(doX, thetaNN_l, num_samples){
-  doX_tensor = doX * tf$ones(shape=c(num_samples,1L),dtype=tf$float32) 
-  
-  parents_x2 = tf$ones(shape=c(num_samples,1L),dtype=tf$float32) #No parents --> set to one (see parents_tmp)
-  x2_samples = sample_from_target(thetaNN_l[[2]], parents_x2)
-  
-  parents_x3 = tf$concat(list(doX_tensor, x2_samples), axis=1L)
-  x3_samples = sample_from_target(thetaNN_l[[3]], parents_x3)
-  
-  parents_x4 = tf$concat(list(doX_tensor, x2_samples), axis=1L)
-  x4_samples = sample_from_target(thetaNN_l[[4]], parents_x4)
-  
-  return(matrix(c(doX_tensor$numpy(),x2_samples$numpy(), x3_samples$numpy(), x4_samples$numpy()), ncol=4))
-}
+df2t = do(thetaNN_l, train$A, doX=c(0.5, NA, NA, NA), num_samples=1042)
+df2 = as.matrix(df2t$numpy())
 
-########################
+
+##############################
 # Do Interventions on x1 #####
 dox_origs = seq(-3, 3, by = 0.5)
 res_med_x4  = res_scm_x4 = res_scm_x3 = res_x3 = res_x4 = dox_origs
 for (i in 1:length(dox_origs)){
+  
   dox_orig = dox_origs[i]
-  #dox_orig = -2 # we expect E(X3|X1=dox_orig)=dox_orig
   dox=scale_value(train$df_orig, col=1L, dox_orig)
   num_samples = 5142L
-  dat_do_x_s = dox1_eq8(dox, thetaNN_l, num_samples = num_samples)
-  
-  #
+  #dat_do_x_s = dox1_eq8(dox, thetaNN_l, num_samples = num_samples)
+  dat_do_x_s = do(thetaNN_l, train$A, doX=c(dox, NA, NA, NA), num_samples=num_samples)
   df = unscale(train$df_orig, dat_do_x_s)
   res_x3[i] = mean(df[,3]$numpy())
   res_x4[i] = mean(df[,4]$numpy())
-  #res_med_x4[i] = median(df[,4]$numpy())
-  
-  
+ 
   d = dgp(5000L, coeffs = coeffs, doX1=dox_orig)
   res_scm_x3[i] = mean(d$df_orig[,3]$numpy())
   res_scm_x4[i] = mean(d$df_orig[,4]$numpy())
 }
+
 #X3
 mse = mean((res_x3 - dox_origs)^2)
 x1dat = data.frame(x=train$df_orig$numpy()[,1])
@@ -230,8 +211,6 @@ data.frame(
   ggtitle(paste0('MSE ours vs theoretical: ', round(mse,4)))
 
 
-########
-#### Counterfact ####
 ###############################################
 # Counterfactual  
 ###############################################
@@ -366,7 +345,38 @@ rug(xorgs)
 abline(v = quantile(xorgs, c(0.05, 0.95)))
 
 
+#################
+# Old do stuff ##
+#################
 
+if (FALSE){
+#Samples from Z give X=doX
+dox1_eq8 = function(doX, thetaNN_l, num_samples){
+  doX_tensor = doX * tf$ones(shape=c(num_samples,1L),dtype=tf$float32) 
+  
+  parents_x2 = tf$ones(shape=c(num_samples,1L),dtype=tf$float32) #No parents --> set to one (see parents_tmp)
+  x2_samples = sample_from_target(thetaNN_l[[2]], parents_x2)
+  
+  parents_x3 = tf$concat(list(doX_tensor, x2_samples), axis=1L)
+  x3_samples = sample_from_target(thetaNN_l[[3]], parents_x3)
+  
+  parents_x4 = tf$concat(list(doX_tensor, x2_samples), axis=1L)
+  x4_samples = sample_from_target(thetaNN_l[[4]], parents_x4)
+  
+  return(matrix(c(doX_tensor$numpy(),x2_samples$numpy(), x3_samples$numpy(), x4_samples$numpy()), ncol=4))
+}
+
+df = dox1_eq8(0.5, thetaNN_l, num_samples=1e4L)
+str(df)
+summary(df)
+
+df2t = do(thetaNN_l, train$A, doX=c(0.5, NA, NA, NA), num_samples=1e4)
+df2 = as.matrix(df2t$numpy())
+qqplot(df2[,2], df[,2]);abline(0,1)
+qqplot(df2[,3], df[,3]);abline(0,1)
+qqplot(df2[,4], df[,4]);abline(0,1)
+
+}
 
 ###############################################
 # Dependency plots 

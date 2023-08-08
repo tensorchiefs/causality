@@ -118,23 +118,6 @@ plot_obs_fit(train_data$parents, train_data$target, thetaNN_l, name='Training')
 plot_obs_fit(val_data$parents, val_data$target, thetaNN_l, name='Validation')
 
 ############################### Do X via Flow ########################
-#Samples from Z give X=doX
-dox1 = function(doX, thetaNN_l, num_samples){
-  doX_tensor = doX * tf$ones(shape=c(num_samples,1L),dtype=tf$float32) 
-  
-  x2_samples = sample_from_target(thetaNN_l[[2]], doX_tensor)
-  x4_samples = sample_from_target(thetaNN_l[[4]], doX_tensor)
-  
-  parents_x3 = tf$concat(list(doX_tensor, x2_samples), axis=1L)
-  x3_samples = sample_from_target(thetaNN_l[[3]], parents_x3)
-  
-  
-  return(matrix(c(doX_tensor$numpy(),x2_samples$numpy(), 
-                  x3_samples$numpy(), x4_samples$numpy()), ncol=4))
-}
-
-
-
 ########################
 # Do Interventions on x1 #####
 dox_origs = seq(-2, 2, by = 0.5)
@@ -152,7 +135,8 @@ for (i in 1:length(dox_origs)){
   dox_orig = dox_origs[i]
   #dox_orig = -2 # we expect E(X3|X1=dox_orig)=dox_orig
   dox=scale_value(train$df_orig, col=1L, dox_orig)
-  dat_do_x_s = dox1(dox, thetaNN_l, num_samples = num_samples)
+  #dat_do_x_s = dox1(dox, thetaNN_l, num_samples = num_samples)
+  dat_do_x_s = do(thetaNN_l, A = train$A, doX = c(dox, NA, NA, NA), num_samples)
   
   #
   df = unscale(train$df_orig, dat_do_x_s)
@@ -354,8 +338,33 @@ ggplot(df) +
 
 
 
-
-
+###########
+# Old Stuff for checking
+if (FALSE){
+  dox1 = function(doX, thetaNN_l, num_samples){
+    doX_tensor = doX * tf$ones(shape=c(num_samples,1L),dtype=tf$float32) 
+    
+    x2_samples = sample_from_target(thetaNN_l[[2]], doX_tensor)
+    x4_samples = sample_from_target(thetaNN_l[[4]], doX_tensor)
+    
+    parents_x3 = tf$concat(list(doX_tensor, x2_samples), axis=1L)
+    x3_samples = sample_from_target(thetaNN_l[[3]], parents_x3)
+    
+    
+    return(matrix(c(doX_tensor$numpy(),x2_samples$numpy(), 
+                    x3_samples$numpy(), x4_samples$numpy()), ncol=4))
+  }
+  
+  df = dox1(0.5, thetaNN_l, num_samples=1e4L)
+  str(df)
+  summary(df)
+  
+  df2t = do(thetaNN_l, train$A, doX=c(0.5, NA, NA, NA), num_samples=1e4)
+  df2 = as.matrix(df2t$numpy())
+  qqplot(df2[,2], df[,2]);abline(0,1)
+  qqplot(df2[,3], df[,3]);abline(0,1)
+  qqplot(df2[,4], df[,4]);abline(0,1)
+}
 
 
 

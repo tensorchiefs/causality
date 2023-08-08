@@ -389,8 +389,86 @@ get_x = function(net, parents, z){
   return(as.numeric(res$numpy()))
 }
 
+########### Interventions ######
+#### Helper ####
+is_upper_triangular <- function(mat) {
+  # Ensure it's a square matrix
+  if (nrow(mat) != ncol(mat)) {
+    return(FALSE)
+  }
+  
+  # Check if elements below the diagonal are zero
+  for (i in 1:nrow(mat)) {
+    for (j in 1:ncol(mat)) {
+      if (j < i && mat[i, j] != 0) {
+        return(FALSE)
+      }
+      if (j == i && mat[i, j] != 0) {
+        return(FALSE)
+      }
+    }
+  }
+  
+  return(TRUE)
+}
+
+#' Draws samples from a tramDAG using the do-operation (in scaled space!)
+#'
+#' @param thetaNN_l The list of weights of the networks
+#' @param A The Adjacency Matrix (first column is parents for x1 and hence empty)
+#' @param doX The variables on which the do operation should be done and the 
+#' strength of the intervention (in the scaled space). NA indicates no interaction
+#' @num_samples  The number of samples to be drawn
+#' @return Returns the squared value of x.
+#' 
+#' @examples
+#' do(thetaNN_l, doX = c(0.5, NA, NA), 1000) draws 1000 samples from do(x_1=0.5)
+#' do(thetaNN_l, doX = c(NA, NA, NA), 1000) draws 1000 samples from observational distribution
+
+do = function(thetaNN_l, A, doX = c(0.5, NA, NA, NA), num_samples=1042){
+  num_samples = as.integer(num_samples)
+  N = length(doX)
+  
+  #### Checking the input #####
+  stopifnot(is_upper_triangular(A)) #A needs to be upper triangular
+  stopifnot(length(thetaNN_l) == N) #Same number of variables
+  stopifnot(nrow(A) == N)           #Same number of variables
+  stopifnot(sum(is.na(doX)) >= N-1) #Currently only one Variable with do
+  
+  # Looping over the variables assuming causal ordering
+  #Sampling (or replacing with do) of the current variable x
+  xl = list() 
+  for (i in 1:N){
+    x = NA
+    parents = which(A[,i] == 1)
+    if (length(parents) == 0) { #Root node?
+      ones = tf$ones(shape=c(num_samples,1L),dtype=tf$float32)
+      if(is.na(doX[i])){ #No do ==> replace with samples (conditioned on 1)
+        x = sample_from_target(thetaNN_l[[i]], ones)
+      } else{
+        x = doX[i] * ones #replace with do
+      }
+    } else { #No root node ==> the parents are present 
+      if(is.na(doX[i])){ #No do ==> replace with samples (conditioned on 1)
+        x = sample_from_target(thetaNN_l[[i]], tf$concat(xl[parents], axis = 1L))
+      } else{ #Replace with do
+        ones = tf$ones(shape=c(num_samples,1L),dtype=tf$float32) 
+        x = doX[i] * ones #replace with do
+      }
+    }
+    xl = c(xl, x)
+  }
+  
+  return(tf$concat(xl, axis = 1L))
+}
+
+
 ########### Loading #########
 load_weights = function(epoch, l){
+###
+  #' epoch number of epoch to load the data
+  #' l loss list as returned by do_training 
+###
   printf("Loading previously stored weight of epoch: %d\n", epoch)
   e = epoch
   loss = l[[1]]

@@ -26,8 +26,6 @@ M = 30
 len_theta = M + 1
 bp = make_bernp(len_theta)
 
-
-
 ######################################
 ############# DGP ###############
 ######################################
@@ -96,7 +94,6 @@ if(USE_EXTERNAL_DATA){
 
 val_data = split_data(val$A, val$df_scaled)
 
-
 ###### Training Step #####
 optimizer = tf$keras$optimizers$Adam(learning_rate=0.001)
 l = do_training(train$name, thetaNN_l = thetaNN_l, train_data = train_data, val_data = val_data,
@@ -118,23 +115,8 @@ load_weights(epoch = EPOCHS, l)
 plot_obs_fit(train_data$parents, train_data$target, thetaNN_l, name='Training')
 plot_obs_fit(val_data$parents, val_data$target, thetaNN_l, name='Validation')
 
-
-d = dgp(1000L, doX1=1)
-mean(d$df_orig[,3]$numpy())
-
 ############################### Do X via Flow ########################
 #Samples from Z give X=doX
-dox1 = function(doX, thetaNN_l, num_samples){
-  doX_tensor = doX * tf$ones(shape=c(num_samples,1L),dtype=tf$float32) 
-  
-  x2_samples = sample_from_target(thetaNN_l[[2]], doX_tensor)
-  
-  parents_x3 = tf$concat(list(doX_tensor, x2_samples), axis=1L)
-  x3_samples = sample_from_target(thetaNN_l[[3]], parents_x3)
-  
-  return(matrix(c(doX_tensor$numpy(),x2_samples$numpy(), x3_samples$numpy()), ncol=3))
-}
-
 
 
 ########################
@@ -149,7 +131,9 @@ for (i in 1:length(dox_origs)){
   dox_orig = dox_origs[i]
   #dox_orig = -2 # we expect E(X3|X1=dox_orig)=dox_orig
   dox=scale_value(train$df_orig, col=1L, dox_orig)
-  dat_do_x_s = dox1(dox, thetaNN_l, num_samples = num_samples)
+  
+  #dat_do_x_s = dox1(dox, thetaNN_l, num_samples = num_samples)
+  dat_do_x_s = do(thetaNN_l, train$A, doX = c(dox,NA,NA), num_samples = num_samples)
   
   #
   df = unscale(train$df_orig, dat_do_x_s)
@@ -318,8 +302,30 @@ ggplot(df) +
   xlab('would x1 be alpha')  
 #
 
-
-
+#####################
+# Old code to check Do intervention
+if (FALSE){
+  dox1 = function(doX, thetaNN_l, num_samples){
+    doX_tensor = doX * tf$ones(shape=c(num_samples,1L),dtype=tf$float32) 
+    
+    x2_samples = sample_from_target(thetaNN_l[[2]], doX_tensor)
+    
+    parents_x3 = tf$concat(list(doX_tensor, x2_samples), axis=1L)
+    x3_samples = sample_from_target(thetaNN_l[[3]], parents_x3)
+    
+    return(matrix(c(doX_tensor$numpy(),x2_samples$numpy(), x3_samples$numpy()), ncol=3))
+  }
+  
+  df = dox1(0.5, thetaNN_l, num_samples=1e4L)
+  str(df)
+  summary(df)
+  
+  df2t = do(thetaNN_l, train$A, doX=c(0.5, NA, NA), num_samples=1e4)
+  df2 = as.matrix(df2t$numpy())
+  qqplot(df2[,2], df[,2]);abline(0,1)
+  qqplot(df2[,3], df[,3]);abline(0,1)
+  qqplot(df2[,4], df[,4]);abline(0,1)
+}
 
 
 
