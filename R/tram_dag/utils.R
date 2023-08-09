@@ -570,7 +570,7 @@ load_weights = function(epoch, l){
     if (checksum == file_content){
       printf('Layer %d checksum consistent with stored \n',i)
     } else {
-      printf('Layer %d checksum calculated %s\n',i, file_content)
+      printf('Layer %d checksum calculated %s\n',i, checksum)
       printf('Layer %d checksum stored %s\n',i, file_content)
       stop('checksum missmatch')
     }
