@@ -1,12 +1,14 @@
-source('R/tram_dag/utils.R')
 library(R.utils)
+source('R/tram_dag/utils.R')
 DEBUG = FALSE
 DEBUG_NO_EXTRA = FALSE
-USE_EXTERNAL_DATA = FALSE 
+USE_EXTERNAL_DATA = TRUE
 
 
-SUFFIX = 'runLaplace_M10_C0.5_long30K_M30'
-EPOCHS = 30000
+SUFFIX = 'runNormal_M30_carefldata_scaled'
+#SUFFIX = 'runLaplace_M10_C0.5_long30K_M30'
+M = 30
+EPOCHS = 7000 
 nTrain = 2500
 DROPBOX = 'C:/Users/sick/dl Dropbox/beate sick/IDP_Projekte/DL_Projekte/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 DROPBOX = '~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/'
@@ -25,7 +27,7 @@ latent_dist = tfd_logistic(loc=0, scale=1)
 #latent_dist = tfd_truncated_normal(loc=0., scale=1.,low=-4,high = 4)
 #hist(latent_dist$sample(1e5)$numpy(),100, freq = FALSE, main='Samples from Latent')
 
-M = 30
+
 len_theta = M + 1
 bp = make_bernp(len_theta)
 
@@ -94,8 +96,14 @@ dgp <- function(n_obs, coeffs, doX1=NA, dat_train=NULL, seed=NA, file=NULL) {
 
 #Data from CAREFL Fig 5
 if (USE_EXTERNAL_DATA){
-  file = "~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/Carefl_fig5.csv"
+  file = "data/CAREFL_CF/X.csv"
   train = dgp(file = file, coeffs = coeffs, seed=42)
+  #We compare against the results written in counterfactual_trials.py
+  colMeans(train$df_orig$numpy()) #CAREFL [-0.01598893  0.00515872  0.00869695  0.26056851]
+  apply(train$df_orig$numpy(), 2, sd) #CAREFL [1.03270839 0.98032533 1.         1.        ]
+  X_obs <- read.csv('data/CAREFL_CF/xObs.csv', header = FALSE)[1,]
+  X_obs = as.numeric(X_obs)
+  X_obs #[[ 2.          1.5         0.84645028 -0.26158623]]
 } else{
   train = dgp(nTrain, coeffs = coeffs, seed=42)
 }
@@ -132,7 +140,7 @@ file.copy(this_file, dirname)
 #e:200.000000  Train: -2.883684, Val: -2.179241 
 loss = l[[1]]
 loss_val = l[[2]]
-plot(loss, type='l', ylim=c(-8.0,-3))
+plot(loss, type='l', ylim=c(-9.0,-1.0))
 points(loss_val, col='green')
 
 #Loading data from epoch e
@@ -164,6 +172,11 @@ for (i in 1:length(dox_origs)){
   d = dgp(5000L, coeffs = coeffs, doX1=dox_orig)
   res_scm_x3[i] = mean(d$df_orig[,3]$numpy())
   res_scm_x4[i] = mean(d$df_orig[,4]$numpy())
+  if (USE_EXTERNAL_DATA) {
+    #The rescaling done in their code
+    res_scm_x3[i] = res_scm_x3[i] / 6.01039
+    res_scm_x4[i] = res_scm_x4[i]/ 1.9114155827
+  }
 }
 
 #X3
@@ -233,18 +246,25 @@ if (FALSE){
   unscaled = unscale(train$df_orig, tf$constant(as.matrix(df), dtype=tf$float32))$numpy()
   X3 = unscaled[3]
   X4 = unscaled[4]
-} else{
+} else if (USE_EXTERNAL_DATA == FALSE){
   X1 = 0.5
   X2 = -0.5
   X3 = -0.243927
   X4 = 1.137823
   X_obs = c(X1, X2, X3, X4)
 }
+if (USE_EXTERNAL_DATA){
+  X1 = X_obs[1]
+  X2 = X_obs[2]
+  X3 = X_obs[3] / 6.01039440669
+  X4 = X_obs[4] / 1.91141558279
+}
 
 cf_do_x1_dgp = function(alpha){
     ###### Theoretical (assume we know the complete SCM)
     # X_3 <- X_1 + coeffs[1] * (X_2^3)  + U3
     # X_4 <- -X_2 + coeffs[2] * (X_1^2) + U4
+    
     U1 = X1
     U2 = X2
     U3 = X3 - X1 - coeffs[1] * X2^3
@@ -254,10 +274,18 @@ cf_do_x1_dgp = function(alpha){
     X_2 = U2
     X_3 = X_1 + coeffs[1] * (X_2^3)  + U3
     X_4 = -X_2 + coeffs[2] * (X_1^2) + U4
+    #if (USE_EXTERNAL_DATA){
+    #  X_3 = X_3/6.01039440669
+    #  X_4 = X_4/1.91141558279
+    #}
+    
    return(data.frame(X1=X_1,X2=X_2,X3=X_3,X4=X_4))
 }
 
-abs(cf_do_x1_dgp(X1)-X_obs) #~1e-16 Consistency
+X_obs
+abs(cf_do_x1_dgp(X_obs[1])-X_obs) #~1e-16 Consistency
+
+
 
 ###### From our model
 xobs = scale_validation(train$df_orig, X_obs)$numpy()
@@ -267,7 +295,7 @@ computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, xobs[2],NA,NA)) - xob
 computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, NA,xobs[3],NA)) - xobs
 computeCF(thetaNN_l, A=train$A, xobs = xobs, cfdoX = c(NA, NA,NA,xobs[4])) - xobs
 
-## Creating Results for do(x1)
+## Creating Results for computeCF(x1)
 df = data.frame()
 for (a_org in c(seq(-3,3,0.05),X1)){
   dgp = cf_do_x1_dgp(a_org)
@@ -283,18 +311,29 @@ for (a_org in c(seq(-3,3,0.2),X1)){
   df = bind_rows(df, data.frame(x1=a_org, X2=cf_our[2], X3=cf_our[3], X4=cf_our[4], type='OURS'))
 }
 
+xCF_onX1_true <- read.csv('data/CAREFL_CF/xCF_onX1_true.csv', header = FALSE)
+df =  bind_rows(df, data.frame(x1=seq(-3,2.9,0.1), X2=NA, X3=NA, X4=xCF_onX1_true$V1, type='DGP_Code'))
+
+x4tmp <- read.csv('data/CAREFL_CF/xCF_onX1_pred.csv', header = FALSE)
+df =  bind_rows(df, data.frame(x1=seq(-3,2.9,0.1), X2=NA, X3=NA, X4=x4tmp$V1, type='CAREFL'))
+
+
+x1dat = data.frame(x=train$df_orig$numpy()[,1])
 ggplot(df) +
   geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X4, color=type)) +
-  geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X4, color=type)) + 
+  #geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X4, color=type)) + 
+  geom_line(data = subset(df, type == "DGP_Code"), aes(x = x1, y = X4, color=type)) + 
+  geom_point(data = subset(df, type == "CAREFL"), aes(x = x1, y = X4, color=type)) + 
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
   xlab('would x1 be alpha')  
 
 ggplot(df) +
   geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X3, color=type)) +
   geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X3, color=type)) + 
+  geom_rug(data=data.frame(x=train$df_orig$numpy()[,1]), aes(x=x), inherit.aes = FALSE, alpha=0.5) +
   xlab('would x1 be alpha')  
 
-
-
+df_would_x1_x4_cf = df
 ###############################################
 # Counterfactual  
 ###############################################
@@ -332,14 +371,25 @@ for (a_org in c(seq(-3.5,3.5,0.5),X2)){
   df = bind_rows(df, data.frame(X1=a_org, X2=cf_our[2], X3=cf_our[3], X4=cf_our[4], type='OURS'))
 }
 
+x3tmp <- read.csv('data/CAREFL_CF/xCF_onX2_true.csv', header = FALSE)
+df =  bind_rows(df, data.frame(X1=NA, X2=seq(-3,2.9,0.1), X3=x3tmp$V1, X4=NA, type='DGP_Code'))
+
+x3tmp <- read.csv('data/CAREFL_CF/xCF_onX2_pred.csv', header = FALSE)
+df =  bind_rows(df, data.frame(X1=NA, X2=seq(-3,2.9,0.1),  X3=x3tmp$V1, X4=NA, type='CAREFL'))
+
+
 ggplot(df) +
   geom_point(data = subset(df, type == "OURS"), aes(x = X2, y = X4, color=type)) +
   geom_line(data = subset(df, type == "DGP"), aes(x = X2, y = X4, color=type)) + 
+  geom_rug(data=data.frame(x=train$df_orig$numpy()[,2]), aes(x=x), inherit.aes = FALSE, alpha=0.5) +
   xlab('would x2 be alpha')  
 
 ggplot(df) +
   geom_point(data = subset(df, type == "OURS"), aes(x = X2, y = X3, color=type)) +
-  geom_line(data = subset(df, type == "DGP"), aes(x = X2, y = X3, color=type)) + 
+  #geom_line(data = subset(df, type == "DGP"), aes(x = X2, y = X3, color=type)) + 
+  geom_line(data = subset(df, type == "DGP_Code"), aes(x = X2, y = X3, color=type)) + 
+  geom_point(data = subset(df, type == "CAREFL"), aes(x = X2, y = X3, color=type)) + 
+  geom_rug(data=data.frame(x=train$df_orig$numpy()[,2]), aes(x=x), inherit.aes = FALSE, alpha=0.5) +
   xlab('would x2 be alpha')  
 
 

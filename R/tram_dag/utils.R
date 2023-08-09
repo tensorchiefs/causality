@@ -1,3 +1,9 @@
+# Below is for creating documentation
+if (FALSE){
+  roxygen2::roxygenise("R/tram_dag/")
+  devtools::document("R/tram_dag/")
+}
+
 ##################################
 ##### Utils for tram_dag #########
 library(mlt)
@@ -11,9 +17,91 @@ library(tfprobability)
 source('tram_scm/bern_utils.R')
 source('tram_scm/model_utils.R')
 
-########### Functions ############
-##### Creation of deep transformation models ######
-# We need on for each variable in the SCM
+#' Training for loading a cached version
+#'
+#' @param name the name of the data file
+#' @param thetaNN_l the (untrained) list of weights for the network
+#' @param train_data the training data
+#' @param val_data the validation data
+#' @param SUFFIX a name for the current run, describing some details like SUFFIX = 'runLaplace_M10_C0.5_long3K_M30_nTrain500'
+#' @param epochs Number of epochs to train 
+#' @param optimizer The optimizer to use
+#' @param dynamic_lr TRUE If the learning rate should be dynamically adapted (@seealso [update_learning_rate()]) 
+#'
+#' @return the of the loss list(loss, loss_val)
+#'
+#' @examples 
+do_training = function(name, thetaNN_l, train_data, val_data, 
+                       SUFFIX, epochs=200, 
+                       optimizer= tf$keras$optimizers$Adam(learning_rate=0.001),
+                       dynamic_lr = TRUE
+){
+  parents_l = train_data$parents
+  target_l = train_data$target
+  
+  parents_l_val = val_data$parents
+  target_l_val = val_data$target
+  
+  
+  loss = loss_val = rep(NA, epochs)
+  dirname = paste0(DROPBOX, "exp/", train$name, "/", SUFFIX, "/")
+  create_directories_if_not_exist(dirname)
+  loss_name = paste0(dirname, 'losses.rda')
+  
+  if(file.exists(loss_name) == FALSE){
+    for (e in 1:epochs){
+      l = train_step(thetaNN_l, parents_l, target_l, optimizer=optimizer)
+      
+      loss[e]  = l$NLL$numpy()
+      
+      NLL_val = 0  
+      for(i in 1:ncol(val$A)) { # Assuming that thetaNN_l, parents_l and target_l have the same length
+        NLL_val = NLL_val + calc_NLL(thetaNN_l[[i]], parents_l_val[[i]], target_l_val[[i]])$numpy()
+      }
+      loss_val[e] = NLL_val
+      
+      if (dynamic_lr){
+        update_learning_rate(optimizer,NLL_val)
+      }
+      printf("e:%f  Train: %f, Val: %f \n",e, l$NLL$numpy(), NLL_val)
+      if (e %% 10 == 0) {
+        
+        for (i in 1:ncol(val$A)){
+          #printf('Layer %d checksum: %s \n',i, calculate_checksum(thetaNN_l[[i]]$get_weights()))
+          
+          #There might be a problem with h5
+          #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")
+          #thetaNN_l[[i]]$save_weights(path.expand(fn))
+          
+          fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.rds")
+          saveRDS(thetaNN_l[[i]]$get_weights(), path.expand(fn))
+          
+          #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_model.h5")
+          #save_model_hdf5(thetaNN_l[[i]], fn)
+          
+          fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_checksum.txt")
+          write(calculate_checksum(thetaNN_l[[i]]$get_weights()), fn)
+        }
+      }
+    }
+    # Saving weights after training
+    save(loss, loss_val, file=loss_name)
+  }  else {
+    print('Loss File Exists')
+  }
+  load(loss_name)
+  return(list(loss, loss_val))
+}
+
+
+#' Splits the data into parents and targets
+#'
+#' @param A the adjacency matrix
+#' @param dat_scaled.tf 
+#'
+#' @return list of parents and targets
+#'
+#' @examples
 split_data = function(A, dat_scaled.tf){
   parents_l = target_l = list()
   for (i in 1:ncol(A)){
@@ -34,6 +122,7 @@ split_data = function(A, dat_scaled.tf){
   return(list(parents = parents_l, target = target_l))
 }
 
+
 make_thetaNN = function(A, parents_l){
   thetaNN_l = list()
   for (i in 1:length(parents_l)){
@@ -46,7 +135,6 @@ make_thetaNN = function(A, parents_l){
   }
   return(thetaNN_l)
 }
-
 
 update_learning_rate <- function(optimizer, current_loss, factor=0.1, patience=50, min_lr=1e-7) {
   if (!exists("best_loss")) {
@@ -261,68 +349,6 @@ make_model = function(len_theta, parent_dim){
     layer_dense(units=len_theta) %>% 
     layer_activation('linear') 
   return (model)
-}
-
-do_training = function(name, thetaNN_l, train_data, val_data, 
-                       SUFFIX, epochs=200, 
-                       optimizer= tf$keras$optimizers$Adam(learning_rate=0.001),
-                       dynamic_lr = TRUE
-                       ){
-  parents_l = train_data$parents
-  target_l = train_data$target
-
-  parents_l_val = val_data$parents
-  target_l_val = val_data$target
-  
-  
-  loss = loss_val = rep(NA, epochs)
-  dirname = paste0(DROPBOX, "exp/", train$name, "/", SUFFIX, "/")
-  create_directories_if_not_exist(dirname)
-  loss_name = paste0(dirname, 'losses.rda')
-  
-  if(file.exists(loss_name) == FALSE){
-    for (e in 1:epochs){
-      l = train_step(thetaNN_l, parents_l, target_l, optimizer=optimizer)
-      
-      loss[e]  = l$NLL$numpy()
-      
-      NLL_val = 0  
-      for(i in 1:ncol(val$A)) { # Assuming that thetaNN_l, parents_l and target_l have the same length
-        NLL_val = NLL_val + calc_NLL(thetaNN_l[[i]], parents_l_val[[i]], target_l_val[[i]])$numpy()
-      }
-      loss_val[e] = NLL_val
-      
-      if (dynamic_lr){
-        update_learning_rate(optimizer,NLL_val)
-      }
-      printf("e:%f  Train: %f, Val: %f \n",e, l$NLL$numpy(), NLL_val)
-      if (e %% 10 == 0) {
-        
-        for (i in 1:ncol(val$A)){
-          #printf('Layer %d checksum: %s \n',i, calculate_checksum(thetaNN_l[[i]]$get_weights()))
-          
-          #There might be a problem with h5
-          #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.h5")
-          #thetaNN_l[[i]]$save_weights(path.expand(fn))
-          
-          fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_weights.rds")
-          saveRDS(thetaNN_l[[i]]$get_weights(), path.expand(fn))
-          
-          #fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_model.h5")
-          #save_model_hdf5(thetaNN_l[[i]], fn)
-          
-          fn = paste0(dirname,train$name, "_nn", i, "_e", e, "_checksum.txt")
-          write(calculate_checksum(thetaNN_l[[i]]$get_weights()), fn)
-        }
-      }
-    }
-    # Saving weights after training
-    save(loss, loss_val, file=loss_name)
-  }  else {
-    print('Loss File Exists')
-  }
-  load(loss_name)
-  return(list(loss, loss_val))
 }
 
 # Function to calculate the SHA256 checksum
