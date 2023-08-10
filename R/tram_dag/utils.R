@@ -590,6 +590,16 @@ load_weights = function(epoch, l){
   printf('loss calculated validation: %f \n', NLL_val)
 } 
 
+######## Simple Stuff ######
+
+#' creates a filename for a figure by adding SUFFIX and place of DB
+#'
+#' @param name 
+#'
+#' @return
+make_fn = function(name) {
+  return(paste0(DROPBOX, "figures/", SUFFIX,"_",name)) 
+}
 
 
 

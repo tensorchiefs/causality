@@ -3,8 +3,9 @@ library(R.utils)
 DEBUG = FALSE
 DEBUG_NO_EXTRA = FALSE
 USE_EXTERNAL_DATA = FALSE 
-SUFFIX = 'run_simpson_symprod_04'
-EPOCHS = 1000
+M = 30
+SUFFIX = 'run_simpson_symprod_10k_2500_M30'
+EPOCHS = 10000
 
 DROPBOX = 'C:/Users/sick/dl Dropbox/beate sick/IDP_Projekte/DL_Projekte/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 DROPBOX = '~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/'
@@ -22,7 +23,7 @@ latent_dist = tfd_logistic(loc=0, scale=1)
 #latent_dist = tfd_normal(loc=0, scale=1)
 #latent_dist = tfd_truncated_normal(loc=0., scale=1.,low=-4,high = 4)
 
-M = 30
+
 len_theta = M + 1
 bp = make_bernp(len_theta)
 
@@ -121,7 +122,6 @@ plot_obs_fit(val_data$parents, val_data$target, thetaNN_l, name='Validation')
 ########################
 # Do Interventions on x1 #####
 dox_origs = seq(-2, 2, by = 0.5)
-#dox_origs = seq(0, 1, by = 1)
 num_samples = 1142L
 inter_mean_dgp_x2 = inter_mean_dgp_x3 = 
   inter_mean_dgp_x4 = inter_mean_ours_x2 = 
@@ -131,6 +131,7 @@ inter_dgp_x2 = inter_dgp_x3 = inter_dgp_x4 =
   inter_ours_x2 = inter_ours_x3 = inter_ours_x4 = 
   matrix(NA, nrow=length(dox_origs), ncol=num_samples)
 
+dox_origs_simu = seq(-2, 2, by = 0.5)
 for (i in 1:length(dox_origs)){
   dox_orig = dox_origs[i]
   #dox_orig = -2 # we expect E(X3|X1=dox_orig)=dox_orig
@@ -160,17 +161,17 @@ for (i in 1:length(dox_origs)){
   inter_dgp_x4[i,] = d$df_orig[,4]$numpy()
 }
 
-#Interventional Distributions 
-df = data.frame(dox=numeric(0),x2=numeric(0),x3=numeric(0), x4=numeric(0),type=character(0))
+## Interventional Distributions ####
+df_do = data.frame(dox=numeric(0),x2=numeric(0),x3=numeric(0), x4=numeric(0),type=character(0))
 for (step in c(1,3,5,6,9)){
-    df = rbind(df, data.frame(
+    df_do = rbind(df_do, data.frame(
       dox = dox_origs[step],
       x2 = inter_dgp_x2[step,],
       x3 = inter_dgp_x3[step,],
       x4 = inter_dgp_x4[step,],
       type = 'simu'
     ))
-    df = rbind(df, data.frame(
+    df_do = rbind(df_do, data.frame(
       dox = dox_origs[step],
       x2 = inter_ours_x2[step,],
       x3 = inter_ours_x3[step,],
@@ -179,36 +180,91 @@ for (step in c(1,3,5,6,9)){
     )
   )
 }
-ggplot(df) + geom_density(aes(x=x2, col=type, linetype=type)) + facet_grid(~as.factor(dox))
-ggplot(df) + geom_density(aes(x=x3, col=type, linetype=type)) + facet_grid(~as.factor(dox))
-ggplot(df) + geom_density(aes(x=x4, col=type, linetype=type)) + facet_grid(~as.factor(dox))
 
-#X3
+### Plotting the Dists ####
+df_do$facet_label <- paste("dox1 =", df_do$dox)
+ggplot(df_do) + 
+  geom_density(aes(x=x2, col=type, linetype=type)) + 
+  ylab("p(x2|do(x1)") +
+  facet_grid(~facet_label)
+ggsave(make_fn("dox1_dist_x2.pdf"))
+
+ggplot(df_do) + 
+  geom_density(aes(x=x3, col=type, linetype=type)) + 
+  ylab("p(x3|do(x1)") +
+  facet_grid(~facet_label)
+ggsave(make_fn("dox1_dist_x3.pdf"))
+
+ggplot(df_do) + 
+  geom_density(aes(x=x4, col=type, linetype=type)) + 
+  ylab("p(x4|do(x1)") +
+  facet_grid(~as.factor(facet_label))
+ggsave(make_fn("dox1_dist_x4.pdf"))
+
+
+### Plotting the mean effects ####
 x1dat = data.frame(x=train$df_orig$numpy()[,1])
 library(ggplot2)
-df = data.frame(
+
+### X2
+df_do_mean = data.frame(
   x = dox_origs,
-  ours = inter_mean_ours_x3,
+  Ours = inter_mean_ours_x2,
+  #theoretical = dox_origs,
+  Simulation_DGP = inter_mean_dgp_x2
+) 
+d = df_do_mean %>% 
+  pivot_longer(cols = 2:3)
+
+ggplot() + 
+  geom_point(data = subset(d, name == "Ours"), aes(x=x, y=value, col=name)) +
+  geom_line(data = subset(d, name == "Simulation_DGP"), aes(x=x, y=value, col=name, type=name))+
+  #geom_abline(intercept = 0, slope = 1, col='skyblue') +
+  xlab("do(X1)") +
+  ylab("E(X2|do(X1)") +
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5)
+
+ggsave(make_fn("dox1_mean_x2.pdf"))
+
+### X3
+df_do_mean = data.frame(
+  x = dox_origs,
+  Ours = inter_mean_ours_x3,
   #theoretical = dox_origs,
   Simulation_DGP = inter_mean_dgp_x3
 ) 
-df %>% 
-  pivot_longer(cols = 2:3) %>% 
-  ggplot(aes(x=x, y=value, col=name, type=name)) + geom_point() +
+d = df_do_mean %>% 
+  pivot_longer(cols = 2:3)
+
+ggplot() + 
+  geom_point(data = subset(d, name == "Ours"), aes(x=x, y=value, col=name)) +
+  geom_line(data = subset(d, name == "Simulation_DGP"), aes(x=x, y=value, col=name, type=name))+
   #geom_abline(intercept = 0, slope = 1, col='skyblue') +
   xlab("do(X1)") +
   ylab("E(X3|do(X1)") +
-  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
-  ggtitle(paste0('MSE ours vs Simulation: '))
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) 
 
-#ATE from 0 to 1 (Hacky check that...)
-dox_origs
-dox_origs[5] #0
-dox_origs[7] #1
+ggsave(make_fn("dox1_mean_x3.pdf"))
 
-ATE_our = df$ours[9] - df$ours[7] 
-ATE_simu = df$Simulation_DGP[9] - df$Simulation_DGP[7] 
-ATE_our - ATE_simu
+### X4
+df_do_mean = data.frame(
+  x = dox_origs,
+  Ours = inter_mean_ours_x4,
+  #theoretical = dox_origs,
+  Simulation_DGP = inter_mean_dgp_x4
+) 
+d = df_do_mean %>% 
+  pivot_longer(cols = 2:3)
+
+ggplot() + 
+  geom_point(data = subset(d, name == "Ours"), aes(x=x, y=value, col=name)) +
+  geom_line(data = subset(d, name == "Simulation_DGP"), aes(x=x, y=value, col=name, type=name))+
+  #geom_abline(intercept = 0, slope = 1, col='skyblue') +
+  xlab("do(X1)") +
+  ylab("E(X4|do(X1)") +
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) 
+
+ggsave(make_fn("dox1_mean_x4.pdf"))
 
 
 #######################
@@ -295,22 +351,39 @@ for (a_org in c(seq(-3,3,0.2),X1)){
   df = bind_rows(df, data.frame(x1=a_org, X2=cf_our[2], X3=cf_our[3], X4=dgp[4], type='OURS'))
 }
 
+library(ggpubr)
 ggplot(df) +
   geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X2, color=type)) +
   geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X2, color=type)) + 
-  xlab('would x1 be alpha')  
-#
+  xlab('would x1 be alpha')  + 
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
+  theme_pubr() +  # Positioning the legend to the lower right corner
+  labs(color = "") 
+
+ggsave(make_fn("CFx1_x2.pdf"))
+
 
 ggplot(df) +
   geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X3, color=type)) +
   geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X3, color=type)) + 
-  xlab('would x1 be alpha')  
+  xlab('would x1 be alpha')  + 
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
+  theme_pubr() +  # Positioning the legend to the lower right corner
+  labs(color = "") 
+
+ggsave(make_fn("CFx1_x3.pdf"))
+
 #
 
 ggplot(df) +
   geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X4, color=type)) +
   geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X4, color=type)) + 
-  xlab('would x1 be alpha')  
+  xlab('would x1 be alpha')  + 
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
+  theme_pubr() +  # Positioning the legend to the lower right corner
+  labs(color = "") 
+
+ggsave(make_fn("CFx1_x4.pdf"))
 
 
 

@@ -151,15 +151,15 @@ for (i in 1:length(dox_origs)){
 }
 
 #In 
-df = data.frame(dox=numeric(0),x2=numeric(0),x3=numeric(0), type=character(0))
+df_do = data.frame(dox=numeric(0),x2=numeric(0),x3=numeric(0), type=character(0))
 for (step in c(1,3,5,6,10)){
-    df = rbind(df, data.frame(
+    df_do = rbind(df_do, data.frame(
       dox = dox_origs[step],
       x2 = inter_dgp_x2[step,],
       x3 = inter_dgp_x3[step,],
       type = 'simu'
     ))
-    df = rbind(df, data.frame(
+    df_do = rbind(df_do, data.frame(
       dox = dox_origs[step],
       x2 = inter_ours_x2[step,],
       x3 = inter_ours_x3[step,],
@@ -167,34 +167,67 @@ for (step in c(1,3,5,6,10)){
     )
   )
 }
-ggplot(df) + geom_density(aes(x=x2, col=type, linetype=type)) + facet_grid(~as.factor(dox))
-ggplot(df) + geom_density(aes(x=x3, col=type, linetype=type)) + facet_grid(~as.factor(dox))
 
-#X3
+df_do$facet_label <- paste("dox1 =", df_do$dox)
+ggplot(df_do) + 
+  geom_density(aes(x=x2, col=type, linetype=type)) + 
+  ylab("p(x2|do(x1)") +
+  facet_grid(~dox)
+ggsave(make_fn("dox1_dist_x2.pdf"))
+
+ggplot(df_do) + 
+  geom_density(aes(x=x3, col=type, linetype=type)) + 
+  ylab("p(x3|do(x1)") +
+  facet_grid(~dox)
+ggsave(make_fn("dox1_dist_x3.pdf"))
+
+### Plotting the mean effects ####
+library(ggpubr)
 x1dat = data.frame(x=train$df_orig$numpy()[,1])
-library(ggplot2)
-df = data.frame(
+
+# X2
+df_do_mean = data.frame(
   x = dox_origs,
-  ours = inter_mean_ours_x3,
+  Ours = inter_mean_ours_x2,
+  #theoretical = dox_origs,
+  Simulation_DGP = inter_mean_dgp_x2
+) 
+d = df_do_mean %>% 
+  pivot_longer(cols = 2:3)
+
+ggplot() + 
+  geom_point(data = subset(d, name == "Ours"), aes(x=x, y=value, col=name)) +
+  geom_line(data = subset(d, name == "Simulation_DGP"), aes(x=x, y=value, col=name))+
+  #geom_abline(intercept = 0, slope = 1, col='skyblue') +
+  xlab("do(X1)") +
+  ylab("E(X2|do(X1)") +
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
+  theme_pubr() +  # Positioning the legend to the lower right corner
+  labs(color = "")
+
+ggsave(make_fn("dox1_mean_x2.pdf"))
+
+### X3
+df_do_mean = data.frame(
+  x = dox_origs,
+  Ours = inter_mean_ours_x3,
   #theoretical = dox_origs,
   Simulation_DGP = inter_mean_dgp_x3
 ) 
-df %>% 
-  pivot_longer(cols = 2:3) %>% 
-  ggplot(aes(x=x, y=value, col=name, type=name)) + geom_point() +
+d = df_do_mean %>% 
+  pivot_longer(cols = 2:3)
+
+ggplot() + 
+  geom_point(data = subset(d, name == "Ours"), aes(x=x, y=value, col=name)) +
+  geom_line(data = subset(d, name == "Simulation_DGP"), aes(x=x, y=value, col=name, type=name))+
   #geom_abline(intercept = 0, slope = 1, col='skyblue') +
   xlab("do(X1)") +
   ylab("E(X3|do(X1)") +
-  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
-  ggtitle(paste0('MSE ours vs Simulation: '))
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5)+
+  theme_pubr() +  
+  labs(color = "")
 
-#ATE from 0 to 1 (Hacky check that...)
-dox_origs[7] #0
-dox_origs[9] #1
-
-ATE_our = df$ours[9] - df$ours[7] 
-ATE_simu = df$Simulation_DGP[9] - df$Simulation_DGP[7] 
-ATE_our - ATE_simu
+ggsave(make_fn("dox1_mean_x3.pdf"))
 
 
 ########
@@ -278,14 +311,23 @@ for (a_org in c(seq(-3,3,0.2),X1)){
 ggplot(df) +
   geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X2, color=type)) +
   geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X2, color=type)) + 
-  xlab('would x1 be alpha')  
+  xlab('would x1 be alpha')  + 
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
+  theme_pubr() +  # Positioning the legend to the lower right corner
+  labs(color = "") 
+
+ggsave(make_fn("CFx1_x2.pdf"))
 #
 
 ggplot(df) +
   geom_point(data = subset(df, type == "OURS"), aes(x = x1, y = X3, color=type)) +
   geom_line(data = subset(df, type == "DGP"), aes(x = x1, y = X3, color=type)) + 
-  xlab('would x1 be alpha')  
-#
+  xlab('would x1 be alpha')  + 
+  geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
+  theme_pubr() +  # Positioning the legend to the lower right corner
+  labs(color = "") 
+
+ggsave(make_fn("CFx1_x3.pdf"))
 
 #####################
 # Old code to check Do intervention
