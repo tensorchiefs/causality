@@ -1,8 +1,12 @@
+library(tidyverse)
+library(ggpubr)
 source('R/tram_dag/utils.R')
 library(R.utils)
 DEBUG = FALSE
 DEBUG_NO_EXTRA = FALSE
 USE_EXTERNAL_DATA = FALSE 
+VACA1 = TRUE #Use the DGP
+
 SUFFIX = 'run_triangle_NL_dynamik_long10k_M30_run01'
 EPOCHS = 10000
 
@@ -107,6 +111,31 @@ loss_val = l[[2]]
 plot(loss, type='l', ylim=c(-4.5,-4.3))
 points(loss_val, col='green')
 
+##### Plotting loss curve #####
+# Create the ggplot
+df <- data.frame(
+  Epochs = seq_along(loss),
+  loss = loss,
+  loss_val = loss_val
+)
+
+data_long <- pivot_longer(df, cols = c(loss, loss_val), names_to = "Type", values_to = "Loss")
+
+# Create the ggplot
+g = ggplot(data_long, aes(x = Epochs, y = Loss, color = Type)) +
+  geom_line() +
+  ylim(-4.5, -4.3) +
+  labs(
+    x = "Epochs",
+    y = "Loss"
+  ) +
+  theme_pubr()  
+g
+ggsave(make_fn("loss.pdf"))
+if (FALSE){
+  file.copy(make_fn("loss.pdf"), '~/Dropbox/Apps/Overleaf/tramdag/figures/', overwrite = TRUE)
+}
+
 #Loading data from epoch e
 load_weights(epoch = EPOCHS, l)
 
@@ -120,6 +149,8 @@ plot_obs_fit(val_data$parents, val_data$target, thetaNN_l, name='Validation')
 
 ########################
 # Do Interventions on x1 #####
+summary(train$df_orig[,1]$numpy())
+
 dox_origs = seq(-3, 4, by = 0.5)
 #dox_origs = seq(0, 1, by = 1)
 num_samples = 1142L
@@ -167,6 +198,47 @@ for (step in c(1,3,5,6,10)){
     )
   )
 }
+
+#### Adding the data from VACA2 ####
+X_inter <- read_csv("data/VACA2_triangle_nl/vaca2_triangle_nl_Xinter_x1-3.0.csv", col_names = FALSE)
+df_do = rbind(df_do, data.frame(
+  dox = -3,
+  x2 = X_inter$X2,
+  x3 = X_inter$X3,
+  type = 'CNF' 
+))
+
+X_inter <- read_csv("data/VACA2_triangle_nl/vaca2_triangle_nl_Xinter_x1-2.csv", col_names = FALSE)
+df_do = rbind(df_do, data.frame(
+  dox = -2,
+  x2 = X_inter$X2,
+  x3 = X_inter$X3,
+  type = 'CNF' 
+))
+
+X_inter <- read_csv("data/VACA2_triangle_nl/vaca2_triangle_nl_Xinter_x1-1.csv", col_names = FALSE)
+df_do = rbind(df_do, data.frame(
+  dox = -1,
+  x2 = X_inter$X2,
+  x3 = X_inter$X3,
+  type = 'CNF' 
+))
+
+X_inter <- read_csv("data/VACA2_triangle_nl/vaca2_triangle_nl_Xinter_x1-0.5.csv", col_names = FALSE)
+df_do = rbind(df_do, data.frame(
+  dox = -0.5,
+  x2 = X_inter$X2,
+  x3 = X_inter$X3,
+  type = 'CNF' 
+))
+
+X_inter <- read_csv("data/VACA2_triangle_nl/vaca2_triangle_nl_Xinter_x1+1.5.csv", col_names = FALSE)
+df_do = rbind(df_do, data.frame(
+  dox = 1.5,
+  x2 = X_inter$X2,
+  x3 = X_inter$X3,
+  type = 'CNF' 
+))
 
 df_do$facet_label <- paste("dox1 =", df_do$dox)
 ggplot(df_do) + 
