@@ -441,6 +441,24 @@ is_upper_triangular <- function(mat) {
   return(TRUE)
 }
 
+##### Observational Distribution ########
+#' Draws samples from a tramDAG (in scaled space!)
+#'
+#' @param thetaNN_l The list of weights of the networks
+#' @param A The Adjacency Matrix (first column is parents for x1 and hence empty)
+#' @param doX The variables on which the do operation should be done and the 
+#' strength of the intervention (in the scaled space). NA indicates no interaction
+#' @num_samples  The number of samples to be drawn
+#' @return Returns samples for the defined intervention (num_samples x N)
+#' 
+#' @examples
+#' sampleObs(thetaNN_l, A, 1000) draws 1000 samples of the observational study from the model
+sampleObs = function(thetaNN_l, A, num_samples=1042){
+  doX = rep(NA, rep(nrow(A)))
+  return(do(thetaNN_l=thetaNN_l, A=A, doX=doX,num_samples=num_samples))
+}
+
+
 ##### Do Interventions ########
 #' Draws samples from a tramDAG using the do-operation (in scaled space!)
 #'

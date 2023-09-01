@@ -217,7 +217,7 @@ for (a_org in c(seq(-3,3,0.2),X1)){
   #cf_our = cf_do_x1_ours(a_org)
   cf_our = computeCF(thetaNN_l = thetaNN_l, A = train$A, cfdoX = c(a,NA,NA,NA), xobs = xobs)
   cf_our = unscale(train$df_orig, matrix(cf_our, nrow=1))$numpy()
-  df_x1 = bind_rows(df_x1, data.frame(x1=a_org, X2=cf_our[2], X3=cf_our[3], X4=cf_our[4], type='OURS'))
+  df_x1 = bind_rows(df_x1, data.frame(x1=a_org, X2=cf_our[2], X3=cf_our[3], X4=cf_our[4], type='Ours'))
 }
 
 ### Loading Ground Thruth from Data
@@ -230,21 +230,20 @@ df_x1 =  bind_rows(df_x1, data.frame(x1=seq(-3,2.9,0.1), X2=NA, X3=NA, X4=x4tmp$
 
 x1dat = data.frame(x=train$df_orig$numpy()[,1])
 gl = ggplot(df_x1) +
-  geom_point(data = subset(df_x1, type == "OURS"), aes(x = x1, y = X4, color=type)) +
+  geom_point(data = subset(df_x1, type == "Ours"), aes(x = x1, y = X4, color=type)) +
   geom_line(data = subset(df_x1, type == "DGP"), aes(x = x1, y = X4, color=type)) + 
   #geom_line(data = subset(df_x1, type == "DGP_Code"), aes(x = x1, y = X4, color=type)) + 
   geom_point(data = subset(df_x1, type == "CAREFL"), aes(x = x1, y = X4, color=type)) + 
   geom_rug(data=x1dat, aes(x=x), inherit.aes = FALSE, alpha=0.5) +
-  xlab('would x1 be alpha')  
+  xlab('would x1 have been alpha')  
 
 gl
-#ggsave('~/Dropbox/Apps/Overleaf/tramdag/figures/carefel_fig5_left.pdf', width = 6, height=6)
 
 ggplot(df_x1) +
-  geom_point(data = subset(df_x1, type == "OURS"), aes(x = x1, y = X3, color=type)) +
+  geom_point(data = subset(df_x1, type == "Ours"), aes(x = x1, y = X3, color=type)) +
   geom_line(data = subset(df_x1, type == "DGP"), aes(x = x1, y = X3, color=type)) + 
   geom_rug(data=data.frame(x=train$df_orig$numpy()[,1]), aes(x=x), inherit.aes = FALSE, alpha=0.5) +
-  xlab('would x1 be alpha')  
+  xlab('would x1 have been alpha')  
 
 ###############################################
 # Counterfactual  
@@ -280,7 +279,7 @@ for (a_org in c(seq(-4.5,4.5,0.5),X2)){
   printf("a_org %f a %f \n", a_org, a)
   cf_our = computeCF(thetaNN_l = thetaNN_l, A = train$A, cfdoX = c(NA,a,NA,NA), xobs = xobs)
   cf_our = unscale(train$df_orig, matrix(cf_our, nrow=1))$numpy()
-  df = bind_rows(df, data.frame(X1=a_org, X2=cf_our[2], X3=cf_our[3], X4=cf_our[4], type='OURS'))
+  df = bind_rows(df, data.frame(X1=a_org, X2=cf_our[2], X3=cf_our[3], X4=cf_our[4], type='Ours'))
 }
 
 x3tmp <- read.csv('data/CAREFL_CF/xCF_onX2_true.csv', header = FALSE)
@@ -291,31 +290,56 @@ df =  bind_rows(df, data.frame(X1=NA, X2=seq(-3,2.9,0.1),  X3=x3tmp$V1, X4=NA, t
 
 
 ggplot(df) +
-  geom_point(data = subset(df, type == "OURS"), aes(x = X2, y = X4, color=type)) +
+  geom_point(data = subset(df, type == "Ours"), aes(x = X2, y = X4, color=type)) +
   geom_line(data = subset(df, type == "DGP"), aes(x = X2, y = X4, color=type)) + 
   geom_rug(data=data.frame(x=train$df_orig$numpy()[,2]), aes(x=x), inherit.aes = FALSE, alpha=0.5) +
-  xlab('would x2 be alpha')  
+  xlab('would x2 have been alpha')  
+
+library(ggpubr)
+"#FFC107"
+text_size = 20
+axis_title_size = 18
+custom_colors <- c("DGP" = "red", "Ours" = "#1E88E5", "CAREFL" = "#FFC107")  # grey, blue, orange
 
 gR = ggplot(df) +
-  geom_point(data = subset(df, type == "OURS"), aes(x = X2, y = X3, color=type)) +
+  geom_point(data = subset(df, type == "Ours"), aes(x = X2, y = X3, color=type)) +
   geom_line(data = subset(df, type == "DGP"), aes(x = X2, y = X3, color=type)) + 
   #geom_line(data = subset(df, type == "DGP_Code"), aes(x = X2, y = X3, color=type)) + 
   geom_point(data = subset(df, type == "CAREFL"), aes(x = X2, y = X3, color=type)) + 
   geom_rug(data=data.frame(x=train$df_orig$numpy()[,2]), aes(x=x), inherit.aes = FALSE, alpha=0.5) +
-  xlab('would x2 be alpha') +
+  xlab('would x2 have been alpha') +
   xlim(c(-3.5,3.5)) +
   ylim(c(-5,5)) +
-  theme_pubr() +  # Positioning the legend to the lower right corner
+  scale_color_manual(values = custom_colors, name = "Methods") +
+  theme_minimal() +  # Positioning the legend to the lower right corner
   labs(color = "")  # Replacing the legend title "type" with nothing
+
 gR 
 
-gl0 = gl + theme_pubr() + labs(color = "")  
-library(ggpubr)
-p = grid.arrange(gl0, gR, nrow=2)
-p
-ggsave(plot = p, filename = '~/Dropbox/Apps/Overleaf/tramdag/figures/carefel_fig5.pdf')
+gl0 = gl + 
+  xlim(c(-3.1,3.1)) +
+  scale_color_manual(values = custom_colors, name = "Methods")+ theme_minimal() + labs(color = "")  
 
+plot_list <- list(gR, gl0)
+combined <- ggarrange(
+  plotlist = plot_list, 
+  ncol = 2, nrow = 1, 
+  common.legend = TRUE, 
+  legend = "bottom"
+)
+combined + theme(text = element_text(size = text_size),
+                 axis.title = element_text(size = axis_title_size)) +
+  theme(axis.text.x = element_text(angle = 90),
+        panel.spacing = unit(1, "lines"))
 
+# library(gridExtra)
+# p = grid.arrange(gl0, gR, nrow=2)
+# p
+
+ggsave(make_fn("CF.pdf"), width = 15/2.7, height = 6/2.7)
+if (FALSE){
+  file.copy(make_fn("CF.pdf"), '~/Dropbox/Apps/Overleaf/tramdag/figures/', overwrite = TRUE)
+}
 
 
 
