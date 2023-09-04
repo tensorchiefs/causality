@@ -1,7 +1,5 @@
 ######################################################
 # This is the Vaca1 Linear Triangle Experiment 
-#
-
 
 ####################################
 # Setting the "global" configurations 
@@ -49,20 +47,32 @@ source('R/tram_dag/vaca_triangle.r')
 ######## L1 Observed Plotting the Observed Data and Fits #####
 Xmodel = unscale(train$df_orig, sampleObs(thetaNN_l, A=train$A, 25000))$numpy()
 XDGP = dgp(25000, dat_train = train$df_orig)$df_orig$numpy()
-Xref <- as.matrix(read_csv("data/VACA1_triangle_lin/25K/VACA1_triangle_LIN_XobsModel.csv", col_names = FALSE))
+#Xref <- as.matrix(read_csv("data/VACA1_triangle_lin/carefl/VACA1_triangle_LIN_XobsModel.csv", col_names = FALSE))
   
 # See https://chat.openai.com/share/c5cdb416-44c8-4819-9d07-f021bfa151d2 
+# Manually set the colors
+
+Xref <- as.matrix(read_csv("data/VACA1_triangle_lin/NSF/VACA1_triangle_LIN_XobsModel.csv", col_names = FALSE))
+names <- c("Ours", "NSF", "DGP")  
+custom_colors <- c("Ours" = "#1E88E5", "NSF" = "#FFC107", "DGP" = "red") 
+
+Xref <- as.matrix(read_csv("data/VACA1_triangle_lin/25K/VACA1_triangle_LIN_XobsModel.csv", col_names = FALSE))
+names <- c("Ours", "CNF", "DGP")  
+custom_colors <- c("Ours" = "#1E88E5", "CNF" = "#FFC107", "DGP" = "red")  
+
+
+
 Xmodel_df <- as.data.frame(Xmodel)
 colnames(Xmodel_df) <- c("X1", "X2", "X3")
-Xmodel_df$Type <- 'Ours'
+Xmodel_df$Type <- names[1]
 
 Xref_df <- as.data.frame(Xref)
 colnames(Xref_df) <- c("X1", "X2", "X3")
-Xref_df$Type <- 'CNF'
+Xref_df$Type <- names[2]
 
 XDGP_df <- as.data.frame(XDGP)
 colnames(XDGP_df) <- c("X1", "X2", "X3")
-XDGP_df$Type <- 'DGP'
+XDGP_df$Type <- names[3]
 all_data <- rbind(Xmodel_df, Xref_df, XDGP_df)
 
 # Function to extract legend
@@ -72,9 +82,6 @@ get_legend <- function(my_plot){
   legend <- tmp$grobs[[leg]]
   return(legend)
 }
-
-# Manually set the colors
-custom_colors <- c("DGP" = "red", "Ours" = "#1E88E5", "CNF" = "#FFC107")  # grey, blue, orange
 
 
 createPlotMatrix <- function(data, type_col, var_names,text_size = 20, axis_title_size = 18) {
@@ -122,7 +129,7 @@ createPlotMatrix <- function(data, type_col, var_names,text_size = 20, axis_titl
 # Sample function call
 #library(cowplot)
 g = createPlotMatrix(all_data, "Type", c("X1", "X2", "X3"))
-
+g
 ggsave(make_fn("observations.pdf"))
 if (FALSE){
   file.copy(make_fn("observations.pdf"), '~/Dropbox/Apps/Overleaf/tramdag/figures/', overwrite = TRUE)
@@ -171,7 +178,13 @@ for (step in 1:length(dox_origs)){
 }
 
 ### Loading the data from VACA2
-X_inter <- read_csv("data/VACA1_triangle_lin/25K/vaca1_triangle_lin_Xinter_x2=-3.csv", col_names = FALSE)
+NSF = TRUE
+NSF = FALSE
+if (NSF){
+  X_inter <- read_csv("data/VACA1_triangle_lin/NSF/vaca1_triangle_lin_Xinter_x2=-3.csv", col_names = FALSE)
+} else{
+  X_inter <- read_csv("data/VACA1_triangle_lin/25K/vaca1_triangle_lin_Xinter_x2=-3.csv", col_names = FALSE)
+}
 df_do = rbind(df_do, data.frame(
   dox = -3,
   x2 = X_inter$X2,
@@ -179,7 +192,11 @@ df_do = rbind(df_do, data.frame(
   type = 'CNF' 
 ))
 
-X_inter <- read_csv("data/VACA1_triangle_lin/25K/vaca1_triangle_lin_Xinter_x2=-1.csv", col_names = FALSE)
+if (NSF){
+  X_inter <- read_csv("data/VACA1_triangle_lin/NSF/vaca1_triangle_lin_Xinter_x2=-1.csv", col_names = FALSE)
+} else{
+  X_inter <- read_csv("data/VACA1_triangle_lin/25K/vaca1_triangle_lin_Xinter_x2=-1.csv", col_names = FALSE)
+}
 df_do = rbind(df_do, data.frame(
   dox = -1,
   x2 = X_inter$X2,
@@ -187,7 +204,12 @@ df_do = rbind(df_do, data.frame(
   type = 'CNF' 
 ))
 
-X_inter <- read_csv("data/VACA1_triangle_lin/25K/vaca1_triangle_lin_Xinter_x2=0.csv", col_names = FALSE)
+if (NSF){
+  X_inter <- read_csv("data/VACA1_triangle_lin/NSF/vaca1_triangle_lin_Xinter_x2=0.csv", col_names = FALSE)
+} else{
+  X_inter <- read_csv("data/VACA1_triangle_lin/25K/vaca1_triangle_lin_Xinter_x2=0.csv", col_names = FALSE)
+}
+
 df_do = rbind(df_do, data.frame(
   dox = 0,
   x2 = X_inter$X2,
@@ -203,7 +225,7 @@ axis_title_size = 18
 
 # Custom labeller function
 custom_labeller <- function(variable, value) {
-  return(paste("doX =", value))
+  return(paste("doX2 =", value))
 }
 
 # Your ggplot code
@@ -217,8 +239,7 @@ ggplot(df_do) +
   theme_minimal() +
   theme(text = element_text(size = text_size),
         axis.title = element_text(size = axis_title_size)) +
-  theme(axis.text.x = element_text(angle = 90),
-        panel.spacing = unit(1, "lines"))
+  theme(axis.text.x = element_text(angle = 90))#, panel.spacing = unit(1, "lines"))
 
 
 ggsave(make_fn("dox2_dist_x3.pdf"), width = 15/1.7, height = 6/1.7)
