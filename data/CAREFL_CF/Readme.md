@@ -1,6 +1,12 @@
 # Readme
 
-# Readme
+### Date (last run of the script)
+
+``` r
+format(Sys.time(), "%a %b %d %X %Y")
+```
+
+    [1] "Wed Sep 06 14:01:32 2023"
 
 Codebase: \[https://github.com/tensorchiefs/carefl/commit/\]
 
@@ -43,6 +49,12 @@ summary_stats(as.data.frame(X))
     2 0.955491962466005 5.66156269960336e-27  -6.2383564299485 6.74534589240224
     3 0.307391813690583 1.26462402913678e-70 -19.9930727807444 25.3687902742826
     4 0.895015328276807 2.54202540343256e-38 -3.94614647879877 11.3027034250946
+
+``` r
+dim(X)
+```
+
+    [1] 2500    4
 
 ## Strength of the interventions
 

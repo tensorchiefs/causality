@@ -4,7 +4,11 @@ format: markdown_github
 editor: visual
 ---
 
-# Readme
+### Date (last run of the script)
+
+```{r}
+format(Sys.time(), "%a %b %d %X %Y")
+```
 
 Codebase: \[https://github.com/tensorchiefs/carefl/commit/\]
 
@@ -87,6 +91,7 @@ summary_stats <- function(df) {
 ```{R}
 X = read.csv("X.csv", header = FALSE)
 summary_stats(as.data.frame(X))
+dim(X)
 ```
 
 ## Strength of the interventions
