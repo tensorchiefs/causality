@@ -1,0 +1,90 @@
+---
+title: "Readme"
+format: markdown_github
+editor: visual
+---
+
+# Readme
+
+Codebase: <https://github.com/tensorchiefs/carefl/commit/0bd239773bdffc1>
+
+Command:
+
+```         
+(.venv) (base) oli@olivers-MBP-2 carefl % python main.py -i -n 2500 > "run_carefl_inter_$(git rev-parse HEAD).txt"
+```
+
+Files: The picke file contains serveral data
+
+```{r}
+library(reticulate)
+load_pickle <- function(filepath) {
+
+  
+  reticulate::py_run_string(paste0("
+import pickle
+with open('", filepath, "', 'rb') as file:
+    data = pickle.load(file)
+  "))
+  
+  return(py$data)
+}
+
+data <- load_pickle('int_2500r_cl_mlp_5_10.p')
+summary(data)
+```
+
+```{r, echo=FALSE}
+library(stats)    # for shapiro.test
+
+summary_stats <- function(df) {
+  # Initialize an empty data frame to store results
+  result <- data.frame(Column = character(),
+                       Mean = numeric(),
+                       Std_Dev = numeric(),
+                       Kurtosis = numeric(),
+                       Shapiro_W = numeric(),
+                       Shapiro_p = numeric(),
+                       Min = numeric(),
+                       Max = numeric(),
+                       stringsAsFactors = FALSE)
+
+  # Loop through each column and calculate summary statistics
+  for(col_name in names(df)) {
+    if(is.numeric(df[[col_name]])) {
+      vec <- df[[col_name]]
+      n <- length(vec)
+      
+      # Mean and standard deviation
+      mean_val <- mean(vec, na.rm = TRUE)
+      std_dev <- sd(vec, na.rm = TRUE)
+      
+      # Kurtosis
+      kurt <- sum((vec - mean_val)^4, na.rm = TRUE) / (n * std_dev^4)
+      kurt <- ((n*(n+1))/((n-1)*(n-2)*(n-3))) * kurt - 3*(n-1)/((n-2)*(n-3))
+      
+      # Shapiro-Wilk test
+      shapiro_test <- shapiro.test(vec)
+      
+      # Minimum and maximum
+      min_val <- min(vec, na.rm = TRUE)
+      max_val <- max(vec, na.rm = TRUE)
+      
+      # Append the results to the summary table
+      result <- rbind(result, c(col_name, mean_val, std_dev, kurt,
+                                shapiro_test$statistic, shapiro_test$p.value,
+                                min_val, max_val))
+    }
+  }
+
+  # Assign column names
+  colnames(result) <- c("Column", "Mean", "Std_Dev", "Kurtosis", "Shapiro_W", "Shapiro_p", "Min", "Max")
+  
+  return(result)
+}
+```
+
+```{r}
+head(data$XTraining)
+summary_stats(as.data.frame(data$XTraining))
+```
