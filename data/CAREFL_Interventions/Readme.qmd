@@ -6,7 +6,7 @@ editor: visual
 
 # Readme
 
-Codebase: <https://github.com/tensorchiefs/carefl/commit/0bd239773bdffc1>
+Codebase: [https://github.com/tensorchiefs/carefl/commit/](https://github.com/tensorchiefs/carefl/commit/0bd239773bdffc1) Please read it from the output file
 
 Command:
 
@@ -63,17 +63,22 @@ summary_stats <- function(df) {
       kurt <- sum((vec - mean_val)^4, na.rm = TRUE) / (n * std_dev^4)
       kurt <- ((n*(n+1))/((n-1)*(n-2)*(n-3))) * kurt - 3*(n-1)/((n-2)*(n-3))
       
-      # Shapiro-Wilk test
-      shapiro_test <- shapiro.test(vec)
-      
       # Minimum and maximum
       min_val <- min(vec, na.rm = TRUE)
       max_val <- max(vec, na.rm = TRUE)
       
-      # Append the results to the summary table
-      result <- rbind(result, c(col_name, mean_val, std_dev, kurt,
+      # Shapiro-Wilk test
+      if (length(vec) > 5000 || length(vec) < 3){
+        result <- rbind(result, c(col_name, mean_val, std_dev, kurt,
+                                NA, NA,
+                                min_val, max_val)) 
+      } else{
+        shapiro_test <- shapiro.test(vec)
+         # Append the results to the summary table
+        result <- rbind(result, c(col_name, mean_val, std_dev, kurt,
                                 shapiro_test$statistic, shapiro_test$p.value,
-                                min_val, max_val))
+                                min_val, max_val))  
+      }
     }
   }
 
@@ -84,7 +89,34 @@ summary_stats <- function(df) {
 }
 ```
 
+## The data\$XTraining
+
 ```{r}
 head(data$XTraining)
 summary_stats(as.data.frame(data$XTraining))
+dim(data$XTraining)
 ```
+
+## The Interventional Data
+
+The strength of the intervention is indicated. Note that the intervention is done on X0
+
+```{}
+res = mod.predict_intervention(a, n_samples=20000, iidx=0)
+```
+
+```{r}
+summary_stats(as.data.frame(data$`X_int_-1.0`))
+```
+
+## The Other Data
+
+```{r}
+# Intervention data
+data$x3
+data$x3e
+data$x4
+data$x4e
+```
+
+
