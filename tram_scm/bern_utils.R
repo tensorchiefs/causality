@@ -282,6 +282,8 @@ bernp.p_y_h = function(bernp, out_row, from, to, length.out, out_eta = NULL){
 
 
 if (FALSE){
+  DEBUG = TRUE
+  library(R.utils)
   #print(d)
   #out = 4 #TODO replace if the output of the network
   #p_y(d, 4)
