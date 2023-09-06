@@ -51,7 +51,6 @@ data$x3e #mse stranfe
 data$coef #Coefficients
 data$loss #loss
 
-
 #######################
 # Latent Distribution
 latent_dist = tfd_logistic(loc=0, scale=1)
@@ -132,7 +131,7 @@ if (USE_EXTERNAL_DATA){
   
   #Comparing it with our DGP
   #array([0.45743466, 0.76959229])
-  coeffs = c(0.45743466, 0.76959229)
+  coeffs = c(0.3934242, 0.3380993)
   testing = dgp(coeffs = coeffs, seed=42, n_obs = n_obs)
   qqplot(train$df_orig$numpy()[,1], testing$df_orig$numpy()[,1]);abline(0,1)
   qqplot(train$df_orig$numpy()[,2], testing$df_orig$numpy()[,2]);abline(0,1)
@@ -234,7 +233,8 @@ for (i in 1:length(dox_origs)){
   inter_mean_ours_x4[i] = mean(df[,4]$numpy())
 }
 
-plot(dox_origs, inter_mean_ours_x3) 
+plot(dox_origs, inter_mean_ours_x3, xlim=c(0,5))
+
 abline(0,1)
 
 plot(dox_origs, inter_mean_ours_x4) 

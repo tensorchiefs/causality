@@ -6,9 +6,9 @@ USE_EXTERNAL_DATA = TRUE
 
 
 SUFFIX = 'runNormal_M30_carefldata_scaled'
-#SUFFIX = 'runLaplace_M10_C0.5_long30K_M30'
+SUFFIX = 'runLaplace_M10_C0.5_long30K_M30'
 M = 30
-EPOCHS = 7000 
+EPOCHS = 30000 
 nTrain = 2500
 DROPBOX = 'C:/Users/sick/dl Dropbox/beate sick/IDP_Projekte/DL_Projekte/shared_Oliver_Beate/Causality_2022/tram_DAG/'
 DROPBOX = '~/Dropbox/__ZHAW/__Projekte_Post_ZHAH/shared_Oliver_Beate/Causality_2022/tram_DAG/'

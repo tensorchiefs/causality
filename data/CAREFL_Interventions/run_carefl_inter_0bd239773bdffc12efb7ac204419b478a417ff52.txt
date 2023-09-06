@@ -1,0 +1,12 @@
+loading config file: configs/interventions.yaml
+running interventions on toy example
+** 2500 observations **
+Coeffs:  [0.39342418 0.33809934]
+fitting a carefl model using seed 0
+Parity:  False
+Parity:  False
+Parity:  False
+Parity:  False
+Parity:  False
+loss: -5.366698741912842
+saving results to results/interventions/carefl/cl/int_2500r_cl_mlp_5_10.p

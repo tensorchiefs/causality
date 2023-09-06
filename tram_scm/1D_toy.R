@@ -2,8 +2,8 @@ library(mlt)
 library(keras)
 library(tensorflow)
 library(tfprobability)
-source('bern_utils.R')
-source("model_utils.R")
+source('tram_scm/bern_utils.R')
+source("tram_scm/model_utils.R")
 
 NB = 10 #Number of Bernstein Polynomials
 
@@ -39,7 +39,7 @@ my_max = max(y)+delta
 
 plot(x,y, ylim=c(my_min, my_max))
 
-#### MLT ###############################################3
+# MLT #####
 var_y <- numeric_var("y", support = c(my_min, my_max))
 bb <- Bernstein_basis(var_y, order=NB, ui="increasing")
 y_grid <- as.data.frame(mkgrid(bb, n = 500))
@@ -60,7 +60,7 @@ for (idx in c(n*0.1,n*0.25,n*0.5,n*0.75,n*0.9)){
 }
 
 
-# MLT Network Model 
+# MLT Network Model #########
 xx = tf$Variable(as.matrix(x, ncol=1), dtype='float32')
 yy = tf$Variable(as.matrix(y, ncol=1), dtype='float32')
 
@@ -69,11 +69,11 @@ T_OUT = 100
 run = 1
 history = make_hist()
 
-source('model_7.R')
+source('tram_scm/model_7.R')
 # Sometimes Error in on_load(), ignore 
 model_7 = new_model_7(len_theta = len_theta, x_dim = 1, y_range=1)
 model_7$name = 'model_7'
-history = model_train(model_7, history, xx, yy,xx, yy, T_STEPS = 1500)
+history = model_train(model_7, history, xx, yy,xx, yy, T_STEPS = 150)
 
 
 NLLS = 0
