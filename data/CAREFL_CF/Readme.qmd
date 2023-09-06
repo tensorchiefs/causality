@@ -10,13 +10,14 @@ editor: visual
 format(Sys.time(), "%a %b %d %X %Y")
 ```
 
+Note that the coefficients have been \[0.5, 0.5\]
+
 Codebase: \[https://github.com/tensorchiefs/carefl/commit/\]
 
 Command:
 
 ```         
-NOT AVAILIBE. CODE HAS BEEN RUN PROBABLY AROUND AUGUST 9
-Probably
+NOT AVAILIBE. CODE HAS BEEN RUN PROBABLY AROUND AUGUST 9 with
 main.py -c -n 2500
 ```
 

@@ -6,14 +6,15 @@
 format(Sys.time(), "%a %b %d %X %Y")
 ```
 
-    [1] "Wed Sep 06 14:01:32 2023"
+    [1] "Wed Sep 06 14:04:51 2023"
+
+Note that the coefficients have been \[0.5, 0.5\]
 
 Codebase: \[https://github.com/tensorchiefs/carefl/commit/\]
 
 Command:
 
-    NOT AVAILIBE. CODE HAS BEEN RUN PROBABLY AROUND AUGUST 9
-    Probably
+    NOT AVAILIBE. CODE HAS BEEN RUN PROBABLY AROUND AUGUST 9 with
     main.py -c -n 2500
 
 The directory contains several CSV - files:
