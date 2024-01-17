@@ -1,0 +1,54 @@
+device: auto
+root_dir: output_comparison
+seed: 2
+run: VACA1_triangle_LIN # OD NO_SPECIAL_RUN, VACA1_triangle_LIN, VACA2_triangle_NLIN
+dataset:
+  root: ../Data
+  name: triangle # simpson
+  sem_name: vaca1_linear # vaca1_linear (What has really been done in the VACA Paper) non-linear #non-additive
+  splits: [ 0.8,0.1, 0.1 ]
+  k_fold: 1
+  shuffle_train: True
+  loss: default
+  scale: default
+  num_samples: 31250 # 2500/0.8 = 3125 Used to be 25000
+  base_version: 5 
+device: cpu
+early_stopping:
+  activate: false
+  min_delta: 0.0
+  patience: 100
+  verbose: false
+model:
+  act: elu
+  adjacency: false
+  base_to_data: false
+  dim_inner:
+  - 16
+  - 16
+  - 16
+  init: None
+  layer_name: maf
+  name: causal_nf
+  num_layers: -1
+  plot: false
+optim:
+  base_lr: 1e-3
+  beta_1: 0.9
+  beta_2: 0.999
+  cooldown: 0
+  factor: 0.95
+  mode: min
+  momentum: 0.0
+  optimizer: adam
+  patience: 60
+  scheduler: plateau
+  weight_decay: 0.0
+seed: 423626
+train:
+  batch_size: 4000
+  enable_progress_bar: false
+  inference_mode: false
+  max_epochs: 1000
+  max_time: 00:24:00:00
+  regularize: false
