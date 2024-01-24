@@ -1,6 +1,3 @@
-######################################################
-# This is the Vaca1 Linear Triangle Experiment 
-
 ####################################
 # Setting the "global" configurations 
 library(tidyverse)
@@ -41,7 +38,6 @@ if (rstudioapi::isAvailable()) {
 DoX = 1 #The variable on which the do-intervention should occur
 DoX = 2
 
-#Possible 
 source('R/tram_dag/vaca_triangle.r')
 
 ######### Creating the plots #######

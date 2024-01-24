@@ -17,6 +17,17 @@ library(tfprobability)
 source('tram_scm/bern_utils.R')
 source('tram_scm/model_utils.R')
 
+version_info = function(){
+  print(reticulate::py_config())
+  print('R version:')
+  print('tensorflow version:')
+  print(tf$version$VERSION)
+  print('keras version:')
+  print(reticulate::py_run_string("import keras; print(keras.__version__)"))
+  print('tfprobability version:')
+  print(tfprobability::tfp_version())
+}
+
 #' Training for loading a cached version
 #'
 #' @param name the name of the data file
@@ -341,7 +352,7 @@ scale_value = function(dat_train_orig, col, value){
 }
 
 
-make_model = function(len_theta, parent_dim){ 
+make_model_old = function(len_theta, parent_dim){ 
   model <- keras_model_sequential() 
   model %>% 
     layer_dense(units=(10), input_shape = c(parent_dim), activation = 'tanh') %>% 
@@ -350,6 +361,16 @@ make_model = function(len_theta, parent_dim){
     layer_activation('linear') 
   return (model)
 }
+
+make_model <- function(len_theta, parent_dim) { 
+  model <- keras_model_sequential() 
+  model$add(layer_dense(units = 10, input_shape = c(parent_dim), activation = 'tanh'))
+  model$add(layer_dense(units = 100, activation = 'tanh'))
+  model$add(layer_dense(units = len_theta, activation = 'linear'))
+  return(model)
+}
+
+
 
 # Function to calculate the SHA256 checksum
 library(digest)

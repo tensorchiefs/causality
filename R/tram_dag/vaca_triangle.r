@@ -89,7 +89,15 @@ graph <- graph_from_adjacency_matrix(train$A, mode = "directed", diag = FALSE)
 plot(graph, vertex.color = "lightblue", vertex.size = 30, edge.arrow.size = 0.5)
 
 train_data = split_data(train$A, train$df_scaled)
-thetaNN_l = make_thetaNN(train$A, train_data$parents)
+tryCatch({
+  # Try to call make_thetaNN
+  thetaNN_l = make_thetaNN(train$A, train_data$parents)
+}, error = function(e) {
+  # If an error occurs, print the error message and try again
+  cat("Error on first try:", e$message, "\n")
+  cat("Trying again TF WTF...\n")
+  thetaNN_l = make_thetaNN(train$A, train_data$parents)
+})
 
 if(USE_EXTERNAL_DATA){
   val = train
@@ -101,6 +109,7 @@ val_data = split_data(val$A, val$df_scaled)
 
 ###### Training Step #####
 optimizer = tf$keras$optimizers$Adam(learning_rate=0.001)
+optimizer = tf$keras$optimizers$legacy$Adam(learning_rate=0.001)
 l = do_training(train$name, thetaNN_l = thetaNN_l, train_data = train_data, val_data = val_data,
                 SUFFIX, epochs = EPOCHS,  optimizer=optimizer)
 
@@ -111,7 +120,7 @@ file.copy(this_file, dirname)
 loss = l[[1]]
 loss_val = l[[2]]
 
-plot(loss, type='l', ylim=c(-4.5,-4.3))
+plot(loss, type='l')
 points(loss_val, col='green')
 
 ##### Plotting loss curve #####
@@ -142,7 +151,10 @@ if (FALSE){
 #Loading data from epoch e
 load_weights(epoch = EPOCHS, l)
 
-################## 
+
+#################################################
+### Old Stuff Commented out #####################
+
 if (FALSE){
   
 
