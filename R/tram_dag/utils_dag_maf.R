@@ -1,3 +1,23 @@
+###### Builds a model #####
+create_theta_tilde_maf = function(adjacency, order){
+  input_layer <- layer_input(shape = list(ncol(adjacency)))
+  outs = list()
+  for (r in 1:order){
+    d = input_layer
+    for (i in 2:(length(layer_sizes) - 1)) {
+      d = LinearMasked(units=layer_sizes[i], mask=t(masks[[i-1]]))(d)
+      d = layer_activation(activation='relu')(d)
+    }
+    out = LinearMasked(units=layer_sizes[length(layer_sizes)], mask=t(masks[[length(layer_sizes) - 1]]))(d)
+    outs = append(outs,out)
+  }
+  outs_c = keras$layers$concatenate(outs)
+  outs_c2 = tf$transpose(tf$reshape(outs_c, shape = c(order, ncol(adjacency))))
+  model = keras_model(inputs = input_layer, outputs = outs_c2)
+  return(model)
+}
+
+
 ###### LinearMasked ####
 LinearMasked(keras$layers$Layer) %py_class% {
   
