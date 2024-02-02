@@ -133,7 +133,7 @@ split_data = function(A, dat_scaled.tf){
   return(list(parents = parents_l, target = target_l))
 }
 
-
+###### Bulding needed networks 
 make_thetaNN = function(A, parents_l){
   thetaNN_l = list()
   for (i in 1:length(parents_l)){
@@ -174,7 +174,7 @@ train_step = function(thetaNN_l, parents_l, target_l, optimizer){
   with(tf$GradientTape() %as% tape, {
     NLL = 0  # Initialize NLL
     for(i in 1:n) { # Assuming that thetaNN_l, parents_l and target_l have the same length
-      NLL = NLL + calc_NLL(thetaNN_l[[i]], parents_l[[i]], target_l[[i]])
+      NLL = NLL + calc_NLL(thetaNN_l[[i]], parents_l[[i]], target_l[[i]], target_index=i)
     }
   })
   
@@ -201,16 +201,37 @@ create_directories_if_not_exist <- function(dir_path) {
   }
 }
 
-calc_NLL = function(nn_theta_tile, parents, target){
-  theta_tilde = nn_theta_tile(parents)
-  theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
-  theta = to_theta(theta_tilde)
-  
-  #latentold = eval_h(theta, y_i = target, beta_dist_h = bp$beta_dist_h)
-  latent = eval_h_extra(theta, y_i = target, beta_dist_h = bp$beta_dist_h, beta_dist_h_dash = bp$beta_dist_h_dash)
-  
-  #h_dashOld = eval_h_dash(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
-  h_dash = eval_h_dash_extra(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
+calc_NLL = function(nn_theta_tile, parents, target, target_index=NULL){
+  if (target_index != NULL) {
+   if (model_tagettype == 'cont') {
+     ### Modelling the intercept
+     cis = which(model_A[,target_index] == 'ci')
+     if(length(cis) == 0) { #No complex intercept
+       ones = tf$ones(shape=c(parents$shape[1],1L),dtype=tf$float32)  
+       theta_tilde = nn_theta_tile(ones)
+       theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
+       theta = to_theta(theta_tilde)
+     }
+     
+     if (model_A[,] == 'ls') {
+       
+     } else{
+       
+     }
+   } else{
+     Not implemented yet
+   }
+  } else{ #Old behavior
+    theta_tilde = nn_theta_tile(parents)
+    theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
+    theta = to_theta(theta_tilde)
+    
+    #latentold = eval_h(theta, y_i = target, beta_dist_h = bp$beta_dist_h)
+    latent = eval_h_extra(theta, y_i = target, beta_dist_h = bp$beta_dist_h, beta_dist_h_dash = bp$beta_dist_h_dash)
+    
+    #h_dashOld = eval_h_dash(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
+    h_dash = eval_h_dash_extra(theta, target, beta_dist_h_dash = bp$beta_dist_h_dash)
+  }
   
   
   pz = latent_dist
