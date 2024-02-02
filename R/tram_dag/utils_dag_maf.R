@@ -144,7 +144,7 @@ dag_maf_plot <- function(layer_masks, layer_sizes) {
   # Create the ggplot object
   network_plot <- ggplot() +
     geom_segment(data = connections, aes(x = x_start, y = -y_start, xend = x_end, yend = -y_end),
-                 color = 'darkgrey', size = 1, alpha = 0.5,
+                 color = 'black', size = 1,
                  arrow = arrow(type = "closed", length = unit(0.15, "inches"))) +
     geom_point(data = nodes, aes(x = x, y = -y), color = 'blue', size = 8,alpha = 0.5) +
     geom_text(data = nodes, aes(x = x, y = -y, label = label), vjust = 0, hjust = 0.5) +  # Add labels

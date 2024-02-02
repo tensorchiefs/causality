@@ -38,6 +38,7 @@ tape$jacobian(y, x)
 if (FALSE){
   library(reticulate)
   source_python("R/tram_dag/dag_maf.py")
+  hidden_features_r = hidden_features
   adjacency_np <- reticulate::r_to_py(adjacency)
   hidden_features_np <- reticulate::r_to_py(hidden_features_r)
   masks_np <- create_masks_np(adjacency_np, hidden_features_np)
