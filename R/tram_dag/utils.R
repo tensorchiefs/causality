@@ -219,7 +219,7 @@ calc_NLL = function(nn_theta_tile, parents, target, target_index=NULL){
        
      }
    } else{
-     Not implemented yet
+     print("Not implemented yet~~~~~~~~~~")
    }
   } else{ #Old behavior
     theta_tilde = nn_theta_tile(parents)

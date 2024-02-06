@@ -1,20 +1,51 @@
 ###### Builds a model #####
-create_theta_tilde_maf = function(adjacency, order){
+create_theta_tilde_maf = function(adjacency, len_theta, layer_sizes){
   input_layer <- layer_input(shape = list(ncol(adjacency)))
   outs = list()
-  for (r in 1:order){
+  for (r in 1:len_theta){
     d = input_layer
     for (i in 2:(length(layer_sizes) - 1)) {
       d = LinearMasked(units=layer_sizes[i], mask=t(masks[[i-1]]))(d)
       d = layer_activation(activation='relu')(d)
     }
     out = LinearMasked(units=layer_sizes[length(layer_sizes)], mask=t(masks[[length(layer_sizes) - 1]]))(d)
-    outs = append(outs,out)
+    outs = append(outs,tf$expand_dims(out, axis=-1L)) #Expand last dim for concatenating
   }
-  outs_c = keras$layers$concatenate(outs)
-  outs_c2 = tf$transpose(tf$reshape(outs_c, shape = c(order, ncol(adjacency))))
-  model = keras_model(inputs = input_layer, outputs = outs_c2)
+  outs_c = keras$layers$concatenate(outs, axis=-1L)
+  model = keras_model(inputs = input_layer, outputs = outs_c)
   return(model)
+}
+
+###### to_theta3 ####
+# See zuko but fixed for order 3
+to_theta3 = function(theta_tilde){
+  shift = tf$convert_to_tensor(log(2) * dim(theta_tilde)[[length(dim(theta_tilde))]] / 2)
+  order = tf$shape(theta_tilde)[3]
+  widths = tf$math$softplus(theta_tilde[,, 2L:order, drop=FALSE])
+  widths = tf$concat(list(theta_tilde[,, 1L, drop=FALSE], widths), axis = -1L)
+  return(tf$cumsum(widths, axis = -1L) - shift)
+}
+
+### Bernstein Basis Polynoms of order M (i.e. M+1 coefficients)
+# return (B,Nodes,M+1)
+bernstein_basis <- function(tensor, M) {
+  # Ensure tensor is a TensorFlow tensor
+  tensor <- tf$convert_to_tensor(tensor)
+  dtype <- tensor$dtype
+  M = tf$cast(M, dtype)
+  # Expand dimensions to allow broadcasting
+  tensor_expanded <- tf$expand_dims(tensor, -1L)
+  k_values <- tf$range(M + 1L) #from 0 to M
+  
+  # Calculate the Bernstein basis polynomials
+  log_binomial_coeff <- tf$math$lgamma(M + 1.) - 
+    tf$math$lgamma(k_values + 1.) - 
+    tf$math$lgamma(M - k_values + 1.)
+  log_powers <- k_values * tf$math$log(tensor_expanded) + 
+    (M - k_values) * tf$math$log(1 - tensor_expanded)
+  log_bernstein <- log_binomial_coeff + log_powers
+  
+  return(tf$exp(log_bernstein))
 }
 
 
@@ -103,6 +134,77 @@ create_masks <- function(adjacency, hidden_features=c(64, 64), activation='relu'
   return(masks)
 }
 
+########## Transformations
+
+### h_dag
+h_dag = function(t_i, theta){
+  len_theta = tf$shape(theta)[3L] #TODO tied to 3er Tensors
+  Be = bernstein_basis(t_i, len_theta-1L) 
+  return (tf$reduce_mean(theta * Be, -1L))
+}
+
+### h_dag_dash
+h_dag_dash = function(t_i, theta){
+  len_theta = tf$shape(theta)[3L] #TODO tied to 3er Tensors
+  Bed = bernstein_basis(t_i, len_theta-2L) 
+  dtheta = (theta[,,2:len_theta,drop=FALSE]-theta[,,1:(len_theta-1L), drop=FALSE])
+  return (tf$reduce_sum(dtheta * Bed, -1L))
+}
+
+
+h_dag_extra = function(t_i, theta){
+  DEBUG = FALSE
+  t_i3 = tf$expand_dims(t_i, axis=-1L)
+  # for t_i < 0 extrapolate with tangent at h(0)
+  b0 <- tf$expand_dims(h_dag(L_START, theta),axis=-1L)
+  slope0 <- tf$expand_dims(h_dag_dash(L_START, theta), axis=-1L) 
+  # If t_i < 0, use a linear extrapolation
+  mask0 <- tf$math$less(t_i3, L_START)
+  h <- tf$where(mask0, slope0 * (t_i3 - L_START) + b0, t_i3)
+  if (DEBUG) printf('~~~ eval_h_extra  Fraction of extrapolated samples < 0 : %f \n', tf$reduce_mean(tf$cast(mask0, tf$float32)))
+  
+  #(for t_i > 1)
+  b1 <- tf$expand_dims(h_dag(R_START, theta),axis=-1L)
+  slope1 <-  tf$expand_dims(h_dag_dash(R_START, theta), axis=-1L)
+  # If t_i > 1, use a linear extrapolation
+  mask1 <- tf$math$greater(t_i3, R_START)
+  h <- tf$where(mask1, slope1 * (t_i3 - R_START) + b1, h)
+  if (DEBUG) printf('~~~ eval_h_extra  Fraction of extrapolated samples > 1 : %f \n', tf$reduce_mean(tf$cast(mask1, tf$float32)))
+  
+  # For values in between, use the original function
+  mask <- tf$math$logical_and(tf$math$greater_equal(t_i3, L_START), tf$math$less_equal(t_i3, R_START))
+  h <- tf$where(mask, tf$expand_dims(h_dag(t_i, theta), axis=-1L), h)
+  # Return the mean value
+  return(tf$squeeze(h))
+}
+
+h_dag_dash_extra = function(t_i, theta){
+  t_i3 = tf$expand_dims(t_i, axis=-1L)
+  slope0 <- tf$expand_dims(h_dag_dash(L_START, theta), axis=-1L) 
+  mask0 <- tf$math$less(t_i3, L_START)
+  h_dash <- tf$where(mask0, slope0, t_i3)
+  
+  slope1 <-  tf$expand_dims(h_dag_dash(R_START, theta), axis=-1L)
+  mask1 <- tf$math$greater(t_i3, R_START)
+  h_dash <- tf$where(mask1, slope1, h_dash)
+  
+  mask <- tf$math$logical_and(tf$math$greater_equal(t_i3, L_START), tf$math$less_equal(t_i3, R_START))
+  h_dash <- tf$where(mask, tf$expand_dims(h_dag_dash(t_i,theta),axis=-1L), h_dash)
+  return (tf$squeeze(h_dash))
+}
+
+dag_loss = function (t_i, theta_tilde){
+  theta = to_theta3(theta_tilde)
+  h_ti = h_dag_extra(t_i, theta)
+  #log_density2 = -h_ti - 2 * tf$math$log(1 + tf$math$exp(-h_ti))
+  # Softpuls is nuerically more stable (according to ChatGPT) compared to log_density2
+  log_latent_density = -h_ti - 2 * tf$math$softplus(-h_ti)
+  h_dag_dashd = h_dag_dash_extra(t_i, theta)
+  log_lik = log_latent_density + tf$math$abs(h_dag_dashd)
+  return (-tf$reduce_mean(log_lik, axis=-1L))#(-tf$reduce_mean(log_lik))
+}
+
+
 # Load the required library
 library(ggplot2)
 library(grid)
@@ -165,7 +267,7 @@ dag_maf_plot <- function(layer_masks, layer_sizes) {
   network_plot <- ggplot() +
     geom_segment(data = connections, aes(x = x_start, y = -y_start, xend = x_end, yend = -y_end),
                  color = 'black', size = 1,
-                 arrow = arrow(type = "closed", length = unit(0.15, "inches"))) +
+                 arrow = arrow()) +
     geom_point(data = nodes, aes(x = x, y = -y), color = 'blue', size = 8,alpha = 0.5) +
     geom_text(data = nodes, aes(x = x, y = -y, label = label), vjust = 0, hjust = 0.5) +  # Add labels
     theme_void() 

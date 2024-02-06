@@ -2,6 +2,7 @@ library(keras)
 library(tensorflow)
 source('R/tram_dag/utils_dag_maf.R')
 
+###### Tesing the MAF ######
 #Defines MAF
 hidden_features = c(2,2)
 adjacency <- matrix(c(0, 1, 1, 0, 0, 0, 0, 0, 0), nrow = 3, byrow = FALSE)
@@ -10,55 +11,102 @@ adjacency <- matrix(c(0, 1, 1, 0, 0, 0, 0, 0, 0), nrow = 3, byrow = FALSE)
 masks = create_masks(adjacency = adjacency, hidden_features)
 layer_sizes <- c(ncol(adjacency), hidden_features, nrow(adjacency))
 
-# Plot MAF
-dag_maf_plot(masks, layer_sizes)
 
-# masks_expansion = function(masks, order=2){
-#   masks_out = list()
-#   for (i in 1:length(masks)){
-#     mm = masks[[i]]
-#     for (r in (1:(order-1))) {
-#       mm = rbind(mm,masks[[i]])
-#     }
-#     masks_out[[i]] = mm
-#   } 
-#   return (masks_out)
-# } 
-# masks = masks_expansion(masks, 2)
-#layer_sizes <- c(ncol(adjacency), 2*hidden_features, 2*nrow(adjacency))
-dag_maf_plot(masks, layer_sizes)
+###### Testing a Linear Masked Layer
+mask = masks[[1]]
+l = LinearMasked(2, t(mask))
+x = tf$ones(c(5L,3L))
+l(x)
 
+dag_maf_plot(masks, layer_sizes)
 # Create MAF
-model = create_theta_tilde_maf(adjacency = adjacency, order = 10L)
-x = tf$ones(c(1L,3L))
-r = model(x)
-r
-
+param_model = create_theta_tilde_maf(adjacency = adjacency, len_theta = 5L)
+x = tf$ones(c(2L,3L))
+theta_tilde = param_model(x)
+theta_tilde
 
 # Calculate the Jacobian matrix using Python and TensorFlow
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   tape$watch(x)
-  y <- model(x)
+  y <- param_model(x)
 })
-tape$jacobian(y, x)
-  
-  
+d = tape$jacobian(y, x)
+d[1,1:3,5,1,1:3] #It's a bit strange that the jacobimatrix also has the batch
+
+
+source('R/tram_dag/utils.R') #L_START
+### Testing h and h_dash #######
 if (FALSE){
-  library(reticulate)
-  source_python("R/tram_dag/dag_maf.py")
-  hidden_features_r = hidden_features
-  adjacency_np <- reticulate::r_to_py(adjacency)
-  hidden_features_np <- reticulate::r_to_py(hidden_features_r)
-  masks_np <- create_masks_np(adjacency_np, hidden_features_np)
+  M = 4L #The order of the bernstein polynoms
+  len_theta = M + 1L
+  t_i = tf$Variable(matrix(rep(seq(-1,2,0.01),3), ncol=3))
+  t_i = tf$cast(t_i, dtype=tf$float32)
   
-  for (i in 1:length(masks)) {
-    if (sum(masks_np[[i]] != masks[[i]]) > 0){
-      print("Error")
-    } else {
-      print("OK")
-    }
-  }
+  theta = matrix(rep(c(0.,2.,2.,2.,2.),3), byrow = TRUE, ncol=len_theta)
+  batch_size = 301L
+  theta_batch = tf$tile(tf$expand_dims(theta, 0L), c(batch_size, 1L, 1L))
+  theta = tf$cast(theta_batch, dtype=tf$float32)
+  h_dag_dashd = h_dag_dash(t_i, theta)
+  h_ti = h_dag_extra(t_i, theta)
+  plot(t_i$numpy()[,1],h_ti$numpy()[,1], type='l')
+  lines(t_i$numpy()[,1],h_dag_dashd$numpy()[,1], col='red')
 }
+
+##### TEMP
+dgp <- function(n_obs) {
+    print("=== Using the DGP of the VACA1 paper in the linear Fashion (Tables 5/6)")
+    flip = sample(c(0,1), n_obs, replace = TRUE)
+    X_1 = flip*rnorm(n_obs, -2, sqrt(1.5)) + (1-flip) * rnorm(n_obs, 1.5, 1)
+    X_2 = -X_1 + rnorm(n_obs)
+    X_3 = X_1 + 0.25 * X_2 + rnorm(n_obs)
+    dat.s =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3)
+    dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
+    A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
+    return(list(df_orig=dat.tf,  A=A))
+} 
+
+library(igraph)
+graph <- graph_from_adjacency_matrix(train$A, mode = "directed", diag = FALSE)
+plot(graph, vertex.color = "lightblue", vertex.size = 30, edge.arrow.size = 0.5)
+hidden_features = c(2)
+adjacency <- t(train$A)
+layer_sizes <- c(ncol(adjacency), hidden_features, nrow(adjacency))
+#order = 5L
+
+# Create Masks
+masks = create_masks(adjacency = adjacency, hidden_features)
+dag_maf_plot(masks, layer_sizes)
+
+train = dgp(72)
+#source('tram_scm/model_utils.R')
+M = 5L
+param_model = create_theta_tilde_maf(adjacency = adjacency, len_theta = M+1, layer_sizes = layer_sizes)
+param_model(train$df_orig)
+optimizer = optimizer_adam(learning_rate = 0.00001)
+param_model$compile(optimizer, loss=dag_loss)
+param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 32L)
+hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 10L,verbose = TRUE)
+
+tf$executing_eagerly()  # Should return TRUE
+with(tf$GradientTape(persistent = TRUE) %as% tape, {
+  theta_tilde = param_model(train$df_orig, training=TRUE)
+  loss = dag_loss(train$df_orig, theta_tilde)
+})
+#gradients <- lapply(gradients, function(g) tf$debugging$check_numerics(g, "Gradient NaN/Inf check"))
+gradients = tape$gradient(loss, param_model$trainable_variables)
+
+# Update weights
+optimizer.apply_gradients(zip(gradients, param_model.trainable_variables))
+
+
+
+
+
+
+
+
+
+
 
 
 
