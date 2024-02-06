@@ -20,7 +20,9 @@ l(x)
 
 dag_maf_plot(masks, layer_sizes)
 # Create MAF
-param_model = create_theta_tilde_maf(adjacency = adjacency, len_theta = 5L)
+param_model = create_theta_tilde_maf(adjacency = adjacency, 
+                                     len_theta = 5L,
+                                     layer_sizes = layer_sizes)
 x = tf$ones(c(2L,3L))
 theta_tilde = param_model(x)
 theta_tilde
@@ -65,6 +67,8 @@ dgp <- function(n_obs) {
     return(list(df_orig=dat.tf,  A=A))
 } 
 
+train = dgp(72)
+
 library(igraph)
 graph <- graph_from_adjacency_matrix(train$A, mode = "directed", diag = FALSE)
 plot(graph, vertex.color = "lightblue", vertex.size = 30, edge.arrow.size = 0.5)
@@ -77,7 +81,7 @@ layer_sizes <- c(ncol(adjacency), hidden_features, nrow(adjacency))
 masks = create_masks(adjacency = adjacency, hidden_features)
 dag_maf_plot(masks, layer_sizes)
 
-train = dgp(72)
+
 #source('tram_scm/model_utils.R')
 M = 5L
 param_model = create_theta_tilde_maf(adjacency = adjacency, len_theta = M+1, layer_sizes = layer_sizes)
@@ -87,14 +91,29 @@ param_model$compile(optimizer, loss=dag_loss)
 param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 32L)
 hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 10L,verbose = TRUE)
 
+x = tf$ones(c(2L,3L))
+param_model <- keras_model_sequential() 
+param_model %>% 
+  layer_dense(units = 4L, activation = 'relu', input_shape = c(3L)) %>% 
+  layer_dense(units = 3L*(M+1L)) %>%
+  layer_reshape(target_shape=c(3L,M+1L))
+
+print(param_model)
+
+param_model(x)
+
 tf$executing_eagerly()  # Should return TRUE
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
-  theta_tilde = param_model(train$df_orig, training=TRUE)
-  loss = dag_loss(train$df_orig, theta_tilde)
+  theta_tilde = param_model(x, training=TRUE)
+  loss = dag_loss(x, theta_tilde)
 })
+
+
 #gradients <- lapply(gradients, function(g) tf$debugging$check_numerics(g, "Gradient NaN/Inf check"))
 gradients = tape$gradient(loss, param_model$trainable_variables)
+gradients
 
+param_model$trainable_variables
 # Update weights
 optimizer.apply_gradients(zip(gradients, param_model.trainable_variables))
 
