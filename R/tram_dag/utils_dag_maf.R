@@ -161,7 +161,7 @@ h_dag_extra = function(t_i, theta){
   # If t_i < 0, use a linear extrapolation
   mask0 <- tf$math$less(t_i3, L_START)
   h <- tf$where(mask0, slope0 * (t_i3 - L_START) + b0, t_i3)
-  if (DEBUG) printf('~~~ eval_h_extra  Fraction of extrapolated samples < 0 : %f \n', tf$reduce_mean(tf$cast(mask0, tf$float32)))
+  #if (DEBUG) printf('~~~ eval_h_extra  Fraction of extrapolated samples < 0 : %f \n', tf$reduce_mean(tf$cast(mask0, tf$float32)))
   
   #(for t_i > 1)
   b1 <- tf$expand_dims(h_dag(R_START, theta),axis=-1L)
@@ -195,13 +195,19 @@ h_dag_dash_extra = function(t_i, theta){
 
 dag_loss = function (t_i, theta_tilde){
   theta = to_theta3(theta_tilde)
-  h_ti = h_dag_extra(t_i, theta)
+  h_ti = h_dag_extra(t_i, theta)#h_dag_extra(t_i, theta)
   #log_density2 = -h_ti - 2 * tf$math$log(1 + tf$math$exp(-h_ti))
   # Softpuls is nuerically more stable (according to ChatGPT) compared to log_density2
   log_latent_density = -h_ti - 2 * tf$math$softplus(-h_ti)
   h_dag_dashd = h_dag_dash_extra(t_i, theta)
   log_lik = log_latent_density + tf$math$abs(h_dag_dashd)
   return (-tf$reduce_mean(log_lik, axis=-1L))#(-tf$reduce_mean(log_lik))
+}
+
+dag_loss_dumm = function (t_i, theta_tilde){
+  theta = to_theta3(theta_tilde)
+  h_ti = h_dag_extra(t_i, theta)
+  return (-tf$reduce_mean(h_ti, axis=-1L)) 
 }
 
 
