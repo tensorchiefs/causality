@@ -1,6 +1,7 @@
 library(keras)
 library(tensorflow)
 source('R/tram_dag/utils_dag_maf.R')
+source('R/tram_dag/utils.R')
 
 dgp <- function(n_obs, doX1=NA, doX2=NA) {
   print("=== Using the DGP of the VACA1 paper in the linear Fashion (Tables 5/6)")
@@ -22,7 +23,10 @@ dgp <- function(n_obs, doX1=NA, doX2=NA) {
   return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
 } 
 train = dgp(50000)
-
+hidden_features = c(2)
+adjacency <- t(train$A)
+layer_sizes <- c(ncol(adjacency), hidden_features, nrow(adjacency))
+masks = create_masks(adjacency = adjacency, hidden_features)
 
 library(igraph)
 graph <- graph_from_adjacency_matrix(train$A, mode = "directed", diag = FALSE)
@@ -38,11 +42,14 @@ param_model$compile(optimizer, loss=dag_loss)
 param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 32L)
 
 ##### Training ####
-hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 500L,verbose = TRUE)
+hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 5L,verbose = TRUE)
 plot(hist$epoch, hist$history$loss)
 if (FALSE){
   param_model$save('triangle_test.keras') #Needs saving
-  param_model =  keras$models$load_model('triangle_test.keras')
+  wdir =  "C:/Users/sick/dl Dropbox/beate sick/IDP_Projekte/DL_Projekte/shared_Oliver_Beate/Causality_2022/tram_DAG/models/triangle_test.keras"
+  param_model =  keras$models$load_model("triangle_test.keras")
+  keras::save_model_hdf5(param_model, "dumm.hdf5")
+  dd=keras::load_model_hdf5("dumm.hdf5")
 } 
 
 
