@@ -90,6 +90,18 @@ LinearMasked(keras$layers$Layer) %py_class% {
     }
     tf$matmul(inputs, masked_w) + self$b
   }
+  
+  get_config <- function() {
+    config <- super$get_config()
+    config$units <- self$units
+    # Convert the mask tensor back to an R array for serialization
+    if (!is.null(self$mask)) {
+      config$mask <- as.array(self$mask)
+    } else {
+      config$mask <- NULL
+    }
+    config
+  }
 }
 
 ###### Pure R Function ####
@@ -134,7 +146,17 @@ create_masks <- function(adjacency, hidden_features=c(64, 64), activation='relu'
   return(masks)
 }
 
-########## Transformations
+########## Transformations ############
+
+sample_standard_logistic <- function(shape, epsilon=1e-7) {
+  uniform_samples <- tf$random$uniform(shape, minval=0, maxval=1)
+  clipped_uniform_samples <- tf$clip_by_value(uniform_samples, epsilon, 1 - epsilon)
+  logistic_samples <- tf$math$log(clipped_uniform_samples / (1 - clipped_uniform_samples))
+  return(logistic_samples)
+}
+
+
+
 
 ### h_dag
 h_dag = function(t_i, theta){
@@ -195,19 +217,123 @@ h_dag_dash_extra = function(t_i, theta){
 
 dag_loss = function (t_i, theta_tilde){
   theta = to_theta3(theta_tilde)
-  h_ti = h_dag_extra(t_i, theta)#h_dag_extra(t_i, theta)
-  #log_density2 = -h_ti - 2 * tf$math$log(1 + tf$math$exp(-h_ti))
+  h_ti = h_dag_extra(t_i, theta)
+  # log_density2 = -h_ti - 2 * tf$math$log(1 + tf$math$exp(-h_ti))
   # Softpuls is nuerically more stable (according to ChatGPT) compared to log_density2
   log_latent_density = -h_ti - 2 * tf$math$softplus(-h_ti)
   h_dag_dashd = h_dag_dash_extra(t_i, theta)
-  log_lik = log_latent_density + tf$math$abs(h_dag_dashd)
-  return (-tf$reduce_mean(log_lik, axis=-1L))#(-tf$reduce_mean(log_lik))
+  log_lik = log_latent_density + tf$math$log(tf$math$abs(h_dag_dashd))
+  return (-tf$reduce_mean(log_lik))#(-tf$reduce_mean(log_lik, axis=-1L))
 }
 
 dag_loss_dumm = function (t_i, theta_tilde){
   theta = to_theta3(theta_tilde)
   h_ti = h_dag_extra(t_i, theta)
   return (-tf$reduce_mean(h_ti, axis=-1L)) 
+}
+
+sample_logistics_within_bounds <- function(h_0, h_1) {
+  samples <- map2_dbl(h_0, h_1, function(lower_bound, upper_bound) {
+    while(TRUE) {
+      sample <- as.numeric(tf$squeeze(sample_standard_logistic(c(1L,1L))))
+      if (lower_bound < sample && sample < upper_bound) {
+        return(sample)
+      }
+    }
+  })
+  return(samples)
+}
+
+##### Sampling from target ########
+#' Draws 1-D samples from the defined target
+#'
+#' @param node the index of the target
+#' @param parents (B,X) the tensor going into the param_model, note that due to the MAF=structure of 
+#'                      the network only the parents have an effect  
+#' @returns samples form the traget index
+sample_from_target_MAF = function(param_model, node, parents){
+  DEBUG_NO_EXTRA = FALSE
+  theta_tilde = param_model(parents)
+  #theta_tilde = tf$cast(theta_tilde, dtype=tf$float32)
+  theta = to_theta3(theta_tilde)
+  
+  #h_0 =  tf$expand_dims(h_dag(L_START, theta), axis=-1L)
+  #h_1 = tf$expand_dims(h_dag(R_START, theta), axis=-1L)
+  h_0 =  h_dag(L_START, theta)
+  h_1 = h_dag(R_START, theta)
+  if (DEBUG_NO_EXTRA){
+    s = sample_logistics_within_bounds(h_0$numpy(), h_1$numpy())
+    latent_sample = tf$constant(s)
+    stop("Not IMplemented") #latent_sample = latent_dist$sample(theta_tilde$shape[1])
+  } else { #The normal case allowing extrapolations
+    latent_sample = sample_standard_logistic(parents$shape)
+  }
+  object_fkt = function(t_i){
+    return(h_dag_extra(t_i, theta) - latent_sample)
+  }
+  #object_fkt(t_i)
+  #shape = tf$shape(parents)[1]
+  #target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = -1E5*tf$ones(c(shape,1L)), high = 1E5*tf$ones(c(shape,1L)))$estimated_root
+  target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = h_0, high = h_1)$estimated_root
+  
+  # Manuly calculating the inverse for the extrapolated samples
+  ## smaller than h_0
+  l = latent_sample#tf$expand_dims(latent_sample, -1L)
+  mask <- tf$math$less_equal(l, h_0)
+  #cat(paste0('~~~ sample_from_target  Fraction of extrapolated samples < 0 : %f \n', tf$reduce_mean(tf$cast(mask, tf$float32))))
+  #tf$where(mask, beta_dist_h$prob(y_i)* theta_im, h)
+  slope0 <- h_dag_dash(L_START, theta)#tf$expand_dims(h_dag_dash(L_START, theta), axis=-1L)
+  target_sample = tf$where(mask, (l-h_0)/slope0, target_sample)
+  
+  ## larger than h_1
+  mask <- tf$math$greater_equal(l, h_1)
+  #tf$where(mask, beta_dist_h$prob(y_i)* theta_im, h)
+  slope1<- h_dag_dash(R_START, theta)
+  target_sample = tf$where(mask, (l-h_1)/slope1 + 1.0, target_sample)
+  cat(paste0('sample_from_target Fraction of extrapolated samples > 1 : %f \n', tf$reduce_mean(tf$cast(mask, tf$float32))))
+  return(target_sample[,node, drop=FALSE])
+}
+
+do_dag = function(param_model, A, doX = c(0.5, NA, NA, NA), num_samples=1042){
+  num_samples = as.integer(num_samples)
+  N = length(doX) #NUmber of nodes
+  
+  #### Checking the input #####
+  stopifnot(is_upper_triangular(A)) #A needs to be upper triangular
+  stopifnot(param_model$input$shape[2L] == N) #Same number of variables
+  stopifnot(nrow(A) == N)           #Same number of variables
+  stopifnot(sum(is.na(doX)) >= N-1) #Currently only one Variable with do(might also work with more but not tested)
+  
+  # Looping over the variables assuming causal ordering
+  #Sampling (or replacing with do) of the current variable x
+  xl = list() 
+  s = tf$ones(c(num_samples, N))
+  for (i in 1:N){
+    ts = NA
+    parents = which(A[,i] == 1)
+    if (length(parents) == 0) { #Root node?
+      ones = tf$ones(shape=c(num_samples,1L),dtype=tf$float32)
+      if(is.na(doX[i])){ #No do ==> replace with samples (conditioned on 1)
+        ts = sample_from_target_MAF(param_model, i, s)
+      } else{
+        ts = doX[i] * ones #replace with do
+      }
+    } else { #No root node ==> the parents are present 
+      if(is.na(doX[i])){ #No do ==> replace with samples (conditioned on 1)
+        ts = sample_from_target_MAF(param_model, i, s)
+      } else{ #Replace with do
+        ones = tf$ones(shape=c(num_samples,1L),dtype=tf$float32) 
+        ts = doX[i] * ones #replace with do
+      }
+    }
+    #s[,i,drop=FALSE] = ts 
+    mask <- tf$one_hot(indices = as.integer(i - 1L), depth = tf$shape(s)[2], on_value = 1.0, off_value = 0.0, dtype = tf$float32)
+    # Adjust 'ts' to have the same second dimension as 's'
+    ts_expanded <- tf$broadcast_to(ts, tf$shape(s))
+    # Subtract the i-th column from 's' and add the new values
+    s <- s - mask + ts_expanded * mask
+  }
+  return(s)
 }
 
 

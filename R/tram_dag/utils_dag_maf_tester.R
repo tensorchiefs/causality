@@ -63,14 +63,18 @@ dgp <- function(n_obs) {
     X_3 = X_1 + 0.25 * X_2 + rnorm(n_obs)
     dat.s =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3)
     dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
-    scaled = scale_df(dat.tf) * 0.99 + 0.001
+    scaled = scale_df(dat.tf) * 0.99 + 0.005
     
     A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
     return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
 } 
 
-train = dgp(72)
-
+train = dgp(50000)
+hist(train$df_orig$numpy()[,1],50)
+hist(train$df_orig$numpy()[,2],50)
+hist(train$df_orig$numpy()[,3],50)
+summary(train$df_orig$numpy())
+  
 library(igraph)
 graph <- graph_from_adjacency_matrix(train$A, mode = "directed", diag = FALSE)
 plot(graph, vertex.color = "lightblue", vertex.size = 30, edge.arrow.size = 0.5)
@@ -85,37 +89,91 @@ dag_maf_plot(masks, layer_sizes)
 
 
 #source('tram_scm/model_utils.R')
-M = 5L
+M = 30L
 param_model = create_theta_tilde_maf(adjacency = adjacency, len_theta = M+1, layer_sizes = layer_sizes)
 param_model(train$df_scaled)
-optimizer = optimizer_adam(learning_rate = 0.00001)
+optimizer = optimizer_adam()
 param_model$compile(optimizer, loss=dag_loss)
-param_model$evaluate(x = train$df_scaled, y=train$df_orig, batch_size = 32L)
-hist = param_model$fit(x = train$df_scaled, y=train$df_orig, epochs = 10L,verbose = TRUE)
+param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 32L)
+hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 500L,verbose = TRUE)
+plot(hist$epoch, hist$history$loss)
+if (FALSE){
+  param_model$save('triangle_test.keras') #Needs saving
+  param_model =  keras$models$load_model('triangle_test.keras')
+} 
 
-x = tf$ones(c(2L,3L)) * 0.5
-# Define the MLP model
-input_layer <- layer_input(shape = list(ncol(adjacency)))
-d = layer_dense(units = 64, activation = 'relu')(input_layer)
-d = layer_dense(units = 30)(d)
-d = layer_reshape(target_shape = c(3, 10))(d)
-param_model = keras_model(inputs = input_layer, outputs = d)
-print(param_model)
-param_model(x)
 
-tf$executing_eagerly()  # Should return TRUE
-with(tf$GradientTape(persistent = TRUE) %as% tape, {
-  theta_tilde = param_model(x, training=TRUE)
-  loss = dag_loss(x, theta_tilde)
-})
+s = do_dag(param_model, train$A, doX=c(NA, NA, NA))
+for (i in 1:3){
+  d = s[,i]$numpy()
+  d = d[d>0 & d<1]
+  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("X_",i))
+  lines(density(train$df_scaled$numpy()[,i]))
+}
 
-#gradients <- lapply(gradients, function(g) tf$debugging$check_numerics(g, "Gradient NaN/Inf check"))
-gradients = tape$gradient(loss, param_model$trainable_variables)
-gradients
+s = do_dag(param_model, train$A, doX=c(0.5, NA, NA))
+for (i in 1:3){
+  d = s[,i]$numpy()
+  d = d[d>0 & d<1]
+  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
+  lines(density(train$df_scaled$numpy()[,i]))
+}
 
-param_model$trainable_variables
-# Update weights
-optimizer.apply_gradients(zip(gradients, param_model.trainable_variables))
+dox1_2=scale_value(train$df_orig, col=1L, 2) #On X2
+s_dox1_2 = do_dag(param_model, train$A, doX=c(dox1_2$numpy(), NA, NA), num_samples = 5000)
+s = s_dox1_2
+for (i in 1:3){
+  d = s[,i]$numpy()
+  d = d[d>0 & d<1]
+  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
+  lines(density(train$df_scaled$numpy()[,i]))
+}
+mean(s_dox1_2$numpy()[,3])
+df = unscale(train$df_orig, s_dox1_2)
+mean(df$numpy()[,3]) #1.39
+
+dox1_3=scale_value(train$df_orig, col=1L, 3.) #On X2
+s_dox1_3 = do_dag(param_model, train$A, doX=c(dox1_3$numpy(), NA, NA), num_samples = 5000)
+mean(s_dox1_3$numpy()[,3])
+df = unscale(train$df_orig, s_dox1_3)
+mean(df$numpy()[,3]) #2.12
+
+dox1_3=scale_value(train$df_orig, col=1L, 1.) #On X2
+s_dox1_3 = do_dag(param_model, train$A, doX=c(dox1_3$numpy(), NA, NA), num_samples = 5000)
+mean(s_dox1_3$numpy()[,3])
+df = unscale(train$df_orig, s_dox1_3)
+mean(df$numpy()[,3]) #0.63
+t.test(df$numpy()[,3])
+
+
+hist(train$df_scaled$numpy()[,1], freq=FALSE)
+
+if(FALSE){
+  x = tf$ones(c(2L,3L)) * 0.5
+  # Define the MLP model
+  input_layer <- layer_input(shape = list(ncol(adjacency)))
+  d = layer_dense(units = 64, activation = 'relu')(input_layer)
+  d = layer_dense(units = 30)(d)
+  d = layer_reshape(target_shape = c(3, 10))(d)
+  param_model = keras_model(inputs = input_layer, outputs = d)
+  print(param_model)
+  param_model(x)
+  tf$executing_eagerly()  # Should return TRUE
+  with(tf$GradientTape(persistent = TRUE) %as% tape, {
+    theta_tilde = param_model(x, training=TRUE)
+    loss = dag_loss(x, theta_tilde)
+  })
+  #gradients <- lapply(gradients, function(g) tf$debugging$check_numerics(g, "Gradient NaN/Inf check"))
+  gradients = tape$gradient(loss, param_model$trainable_variables)
+  gradients
+  
+  param_model$trainable_variables
+  # Update weights
+  optimizer.apply_gradients(zip(gradients, param_model.trainable_variables))
+}
+
+
+
 
 
 
