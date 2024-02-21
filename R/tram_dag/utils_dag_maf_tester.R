@@ -1,39 +1,32 @@
 library(keras)
 library(tensorflow)
-source('R/tram_dag/utils_dag_maf.R')
+source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 
 ###### Tesing the MAF ######
 #Defines MAF
-hidden_features = c(2,2)
+hidden_features <- c(2, 2)
+order <- 4L
+bs <- 5L
+dim <- 3L
 adjacency <- matrix(c(0, 1, 1, 0, 0, 0, 0, 0, 0), nrow = 3, byrow = FALSE)
+adjacency <- adjacency == 1  # Convert to a boolean matrix
 
-# Create Masks
-masks = create_masks(adjacency = adjacency, hidden_features)
+masks <- create_masks(adjacency, hidden_features)  # Custom function
+
 layer_sizes <- c(ncol(adjacency), hidden_features, nrow(adjacency))
+model <- create_theta_tilde_maf(adjacency, order, layer_sizes)  # Custom function
 
+x <- tf$ones(shape = c(bs, dim))
+theta_tilde <- model(x)
+stopifnot(tf$shape(theta_tilde)$numpy() == c(bs, dim, order))  # Shape check
 
-###### Testing a Linear Masked Layer
-mask = masks[[1]]
-l = LinearMasked(2, t(mask))
-x = tf$ones(c(5L,3L))
-l(x)
-
-dag_maf_plot(masks, layer_sizes)
-# Create MAF
-param_model = create_theta_tilde_maf(adjacency = adjacency, 
-                                     len_theta = 5L,
-                                     layer_sizes = layer_sizes)
-x = tf$ones(c(2L,3L))
-theta_tilde = param_model(x)
-theta_tilde
-
-# Calculate the Jacobian matrix using Python and TensorFlow
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   tape$watch(x)
-  y <- param_model(x)
+  y <- model(x)
 })
-d = tape$jacobian(y, x)
-d[1,1:3,5,1,1:3] #It's a bit strange that the jacobimatrix also has the batch
+d <- tape$jacobian(y, x)
+stopifnot(tf$shape(d)$numpy() == c(bs, dim, order, bs, dim))  # Shape check
+print(d)
 
 
 source('R/tram_dag/utils.R') #L_START
@@ -41,17 +34,28 @@ source('R/tram_dag/utils.R') #L_START
 if (FALSE){
   M = 4L #The order of the bernstein polynoms
   len_theta = M + 1L
+  t_i = tf$Variable(matrix(rep(seq(-1,2,0.5),3), ncol=3))#
   t_i = tf$Variable(matrix(rep(seq(-1,2,0.01),3), ncol=3))
   t_i = tf$cast(t_i, dtype=tf$float32)
   
-  theta = matrix(rep(c(0.,2.,2.,2.,2.),3), byrow = TRUE, ncol=len_theta)
+  theta_val = matrix(rep(c(0.,2.,2.,2.,2.),3), byrow = TRUE, ncol=len_theta)
+  batch_size = 7L
   batch_size = 301L
-  theta_batch = tf$tile(tf$expand_dims(theta, 0L), c(batch_size, 1L, 1L))
+  theta_batch = tf$tile(tf$expand_dims(theta_val, 0L), c(batch_size, 1L, 1L))
   theta = tf$cast(theta_batch, dtype=tf$float32)
-  h_dag_dashd = h_dag_dash(t_i, theta)
+  h_dag_dashdd = h_dag_dash(t_i, theta)
   h_ti = h_dag_extra(t_i, theta)
+  h = h_dag(t_i, theta)
+  h_dag_dash_extrad= h_dag_dash_extra(t_i, theta)
   plot(t_i$numpy()[,1],h_ti$numpy()[,1], type='l')
-  lines(t_i$numpy()[,1],h_dag_dashd$numpy()[,1], col='red')
+  lines(t_i$numpy()[,1],h$numpy()[,1], type='l', col='red')
+  
+  plot(t_i$numpy()[,1],h_dag_dashdd$numpy()[,1], type='l')
+  lines(t_i$numpy()[,1],h_dag_dash_extrad$numpy()[,1], type='l', col='red')
+  
+  dag_loss(t_i, theta)
+  
+  #lines(t_i$numpy()[,1],h_dag_dashd$numpy()[,1], col='red')
 }
 
 ##### TEMP
@@ -69,7 +73,12 @@ dgp <- function(n_obs) {
     return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
 } 
 
-train = dgp(50000)
+train = dgp(500)
+hist(train$df_scaled$numpy()[,1],50)
+hist(train$df_scaled$numpy()[,2],50)
+hist(train$df_scaled$numpy()[,3],50)
+
+
 hist(train$df_orig$numpy()[,1],50)
 hist(train$df_orig$numpy()[,2],50)
 hist(train$df_orig$numpy()[,3],50)
@@ -78,7 +87,7 @@ summary(train$df_orig$numpy())
 library(igraph)
 graph <- graph_from_adjacency_matrix(train$A, mode = "directed", diag = FALSE)
 plot(graph, vertex.color = "lightblue", vertex.size = 30, edge.arrow.size = 0.5)
-hidden_features = c(2)
+hidden_features = c(2,2)
 adjacency <- t(train$A)
 layer_sizes <- c(ncol(adjacency), hidden_features, nrow(adjacency))
 #order = 5L
@@ -94,12 +103,16 @@ param_model = create_theta_tilde_maf(adjacency = adjacency, len_theta = M+1, lay
 param_model(train$df_scaled)
 optimizer = optimizer_adam()
 param_model$compile(optimizer, loss=dag_loss)
-param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 32L)
-hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 500L,verbose = TRUE)
+param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 3L)
+
+##### Training ####
+hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 2L,verbose = TRUE)
 plot(hist$epoch, hist$history$loss)
 if (FALSE){
-  param_model$save('triangle_test.keras') #Needs saving
-  param_model =  keras$models$load_model('triangle_test.keras')
+  #register_keras_serializable(name = "dag_loss", namespace = "custom_namespace")
+  #param_model$save('triangle_test.keras')
+  param_model$save_weights('triangle_test_weights.h5')
+  param_model$load_weights('triangle_test_weights.h5')
 } 
 
 

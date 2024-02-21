@@ -35,6 +35,8 @@ bernstein_basis <- function(tensor, M) {
   M = tf$cast(M, dtype)
   # Expand dimensions to allow broadcasting
   tensor_expanded <- tf$expand_dims(tensor, -1L)
+  # Ensuring tensor_expanded is within the range (0,1) 
+  tensor_expanded = tf$clip_by_value(tensor_expanded, tf$keras$backend$epsilon(), 1 - tf$keras$backend$epsilon())
   k_values <- tf$range(M + 1L) #from 0 to M
   
   # Calculate the Bernstein basis polynomials
@@ -52,10 +54,11 @@ bernstein_basis <- function(tensor, M) {
 ###### LinearMasked ####
 LinearMasked(keras$layers$Layer) %py_class% {
   
-  initialize <- function(units = 32, mask = NULL) {
+  initialize <- function(units = 32, mask = NULL, name = NULL, trainable = NULL, dtype = NULL) {
     super$initialize()
     self$units <- units
     self$mask <- mask  # Add a mask parameter
+    # The additional arguments (name, trainable, dtype) are not used but are accepted to prevent errors during deserialization
   }
   
   build <- function(input_shape) {
@@ -72,12 +75,27 @@ LinearMasked(keras$layers$Layer) %py_class% {
       trainable = TRUE
     )
     
-    # Ensure the mask is the correct shape and convert it to a tensor
+    # Handle the mask conversion if it's a dictionary (when loaded from a saved model)
     if (!is.null(self$mask)) {
-      if (!identical(dim(self$mask), dim(self$w))) {
-        stop("Mask shape must match weights shape")
+      np <- import('numpy')
+      if (is.list(self$mask) || "AutoTrackable" %in% class(self$mask)) {
+        # Extract the mask value and dtype from the dictionary
+        mask_value <- self$mask$config$value
+        mask_dtype <- self$mask$config$dtype
+        print("Hallo Gallo")
+        mask_dtype = 'float32'
+        print(mask_dtype)
+        # Convert the mask value back to a numpy array
+        mask_np <- np$array(mask_value, dtype = mask_dtype)
+        # Convert the numpy array to a TensorFlow tensor
+        self$mask <- tf$convert_to_tensor(mask_np, dtype = mask_dtype)
+      } else {
+        # Ensure the mask is the correct shape and convert it to a tensor
+        if (!identical(dim(self$mask), dim(self$w))) {
+          stop("Mask shape must match weights shape")
+        }
+        self$mask <- tf$convert_to_tensor(self$mask, dtype = self$w$dtype)
       }
-      self$mask <- tf$convert_to_tensor(self$mask, dtype = self$w$dtype)
     }
   }
   
@@ -94,15 +112,11 @@ LinearMasked(keras$layers$Layer) %py_class% {
   get_config <- function() {
     config <- super$get_config()
     config$units <- self$units
-    # Convert the mask tensor back to an R array for serialization
-    if (!is.null(self$mask)) {
-      config$mask <- as.array(self$mask)
-    } else {
-      config$mask <- NULL
-    }
+    config$mask <- if (!is.null(self$mask)) tf$make_ndarray(tf$make_tensor_proto(self$mask)) else NULL
     config
   }
 }
+
 
 ###### Pure R Function ####
 # Creates Autoregressive masks for a given adjency matrix and hidden features
@@ -154,8 +168,6 @@ sample_standard_logistic <- function(shape, epsilon=1e-7) {
   logistic_samples <- tf$math$log(clipped_uniform_samples / (1 - clipped_uniform_samples))
   return(logistic_samples)
 }
-
-
 
 
 ### h_dag
