@@ -2,7 +2,7 @@ library(keras)
 library(tensorflow)
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 source('R/tram_dag/utils.R')
-fn = 'triangle_structured_weights_epochs=100.h5'
+fn = 'triangle_structured_weights_epochs=30.h5'
 
 ##### TEMP
 dgp <- function(n_obs) {
@@ -45,10 +45,12 @@ param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
 if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
-  hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 100L,verbose = TRUE)
+  hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 30L,verbose = TRUE)
   param_model$save_weights(fn)
   plot(hist$epoch, hist$history$loss)
 }
+
+param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
 
 ########### TODO Check the sampling (prob needs w) #####
 
