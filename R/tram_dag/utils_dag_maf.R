@@ -16,6 +16,59 @@ create_theta_tilde_maf = function(adjacency, len_theta, layer_sizes){
   return(model)
 }
 
+create_param_net <- function(len_param, input_layer, layer_sizes, masks, last_layer_bias=TRUE) {
+  outs = list()
+  for (r in 1:len_param){
+    d = input_layer
+    for (i in 2:(length(layer_sizes) - 1)) {
+      d = LinearMasked(units=layer_sizes[i], mask=t(masks[[i-1]]))(d)
+      d = layer_activation(activation='relu')(d)
+    }
+    out = LinearMasked(units=layer_sizes[length(layer_sizes)], mask=t(masks[[length(layer_sizes) - 1]]),bias=last_layer_bias)(d)
+    outs = append(outs,tf$expand_dims(out, axis=-1L)) #Expand last dim for concatenating
+  }
+  outs_c = keras$layers$concatenate(outs, axis=-1L)
+}
+
+create_param_model = function(MA, hidden_features_I = c(2,2), len_theta=30, hidden_features_CS = c(2,2)){
+  input_layer <- layer_input(shape = list(ncol(MA)))
+ 
+  ##### Creating the Intercept Model
+  layer_sizes_I <- c(ncol(MA), hidden_features_I, nrow(MA))
+  masks_I = create_masks(adjacency =  t(MA == 'ci'), hidden_features_I)
+  #dag_maf_plot(masks_I, layer_sizes_I)
+  h_I = create_param_net(len_param = len_theta, input_layer=input_layer, layer_sizes = layer_sizes_I, masks_I, last_layer_bias=TRUE)
+
+  ##### Creating the Complex Shift Model
+  layer_sizes_CS <- c(ncol(MA), hidden_features_I, nrow(MA))
+  masks_CS = create_masks(adjacency =  t(MA == 'cs'), hidden_features_CS)
+  #dag_maf_plot(masks_CS, layer_sizes_CS)
+  h_CS = create_param_net(len_param = 1, input_layer=input_layer, layer_sizes = layer_sizes_CS, masks_CS, last_layer_bias=FALSE)
+  
+  ##### Creating the Linear Shift Model
+  #h_LS = keras::layer_dense(input_layer, use_bias = FALSE, units = 1L)
+  layer_sizes_LS <- c(ncol(MA), nrow(MA))
+  masks_LS = create_masks(adjacency =  t(MA == 'ls'), c())
+  outs = list()
+  for (r in 1:nrow(MA)){
+    out = LinearMasked(units=layer_sizes_LS[2], mask=t(masks_LS[[1]]), bias=FALSE)(input_layer)
+    outs = append(outs,tf$expand_dims(out, axis=-1L))
+  }
+  h_LS = keras$layers$concatenate(outs, axis=-1L)
+  
+  #Keras does not work with lists (only in eager mode)
+  #model = keras_model(inputs = input_layer, outputs = list(h_I, h_CS, h_LS))
+  #Dimensions h_I (B,3,30) h_CS (B, 3, 1) h_LS(B, 3, 3)
+  # Convention for stacking
+  # 1       CS
+  # 2->|X|+2 LS
+  # |X|+2 --> Ende M 
+  outputs_tensor = keras$layers$concatenate(list(h_I, h_CS, h_LS), axis=-1L)
+  param_model = keras_model(inputs = input_layer, outputs = outputs_tensor)
+  return(param_model)
+}
+
+
 ###### to_theta3 ####
 # See zuko but fixed for order 3
 to_theta3 = function(theta_tilde){
@@ -54,10 +107,11 @@ bernstein_basis <- function(tensor, M) {
 ###### LinearMasked ####
 LinearMasked(keras$layers$Layer) %py_class% {
   
-  initialize <- function(units = 32, mask = NULL, name = NULL, trainable = NULL, dtype = NULL) {
+  initialize <- function(units = 32, mask = NULL, bias=TRUE, name = NULL, trainable = NULL, dtype = NULL) {
     super$initialize()
     self$units <- units
     self$mask <- mask  # Add a mask parameter
+    self$bias = bias
     # The additional arguments (name, trainable, dtype) are not used but are accepted to prevent errors during deserialization
   }
   
@@ -68,12 +122,16 @@ LinearMasked(keras$layers$Layer) %py_class% {
       initializer = "random_normal",
       trainable = TRUE
     )
-    self$b <- self$add_weight(
-      name = "b",
-      shape = shape(self$units),
-      initializer = "random_normal",
-      trainable = TRUE
-    )
+    if (self$bias) {
+      self$b <- self$add_weight(
+        name = "b",
+        shape = shape(self$units),
+        initializer = "random_normal",
+        trainable = TRUE
+      )
+    } else{
+      self$b <- NULL
+    }
     
     # Handle the mask conversion if it's a dictionary (when loaded from a saved model)
     if (!is.null(self$mask)) {
@@ -106,7 +164,11 @@ LinearMasked(keras$layers$Layer) %py_class% {
     } else {
       masked_w <- self$w
     }
-    tf$matmul(inputs, masked_w) + self$b
+    if(!is.null(self$b)){
+      tf$matmul(inputs, masked_w) + self$b
+    } else{
+      tf$matmul(inputs, masked_w)
+    }
   }
   
   get_config <- function() {
@@ -230,6 +292,7 @@ h_dag_dash_extra = function(t_i, theta){
 dag_loss = function (t_i, theta_tilde){
   theta = to_theta3(theta_tilde)
   h_ti = h_dag_extra(t_i, theta)
+  # The log of the logistic density at h is log(f(h))=−h−2log(1+e −h)
   # log_density2 = -h_ti - 2 * tf$math$log(1 + tf$math$exp(-h_ti))
   # Softpuls is nuerically more stable (according to ChatGPT) compared to log_density2
   log_latent_density = -h_ti - 2 * tf$math$softplus(-h_ti)
@@ -237,6 +300,34 @@ dag_loss = function (t_i, theta_tilde){
   log_lik = log_latent_density + tf$math$log(tf$math$abs(h_dag_dashd))
   return (-tf$reduce_mean(log_lik))#(-tf$reduce_mean(log_lik, axis=-1L))
 }
+
+struct_dag_loss = function (t_i, h_params){
+  # from the last dimension of h_params the first entriy is h_cs1
+  # the second to |X|+1 are the LS
+  # the 2+|X|+1 to the end is H_I
+  h_cs <- h_params[,,1, drop = FALSE]
+  h_ls <- h_params[,,2:4, drop = FALSE]
+  h_ci <- h_params[,,5:dim(h_params)[3], drop = FALSE]
+  #CI 
+  theta_tilde = h_ci#h_params[[1]]
+  theta = to_theta3(theta_tilde)
+  h_I = h_dag_extra(t_i, theta)
+  #LS
+  beta = h_ls
+  h_LS = tf$einsum('bx,bxx->bx', t_i, beta)
+  #CS
+  h_CS = tf$squeeze(h_cs, axis=-1L)
+  
+  h = h_I + h_LS + h_CS
+  
+  #Compute terms for change of variable formula
+  log_latent_density = -h - 2 * tf$math$softplus(-h) #log of logistic density at h
+  ## h' dh/dtarget is 0 for all shift terms
+  h_dash = tf$math$log(tf$math$abs(h_dag_dash_extra(t_i, theta)))
+  log_lik = log_latent_density + tf$math$log(tf$math$abs(h_dash))
+  return (-tf$reduce_mean(log_lik))
+}
+
 
 dag_loss_dumm = function (t_i, theta_tilde){
   theta = to_theta3(theta_tilde)

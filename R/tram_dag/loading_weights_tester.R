@@ -1,7 +1,8 @@
 library(keras)
 library(tensorflow)
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
-source('R/tram_dag/utils.R') #L_START
+source('R/tram_dag/utils.R')
+#source('R/tram_dag/utils_light_TFP_Free.R') #L_START
 
 ### Defining the DGP
 dgp <- function(n_obs) {
