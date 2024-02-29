@@ -49,21 +49,22 @@ create_param_model = function(MA, hidden_features_I = c(2,2), len_theta=30, hidd
   #h_LS = keras::layer_dense(input_layer, use_bias = FALSE, units = 1L)
   layer_sizes_LS <- c(ncol(MA), nrow(MA))
   masks_LS = create_masks(adjacency =  t(MA == 'ls'), c())
-  outs = list()
-  for (r in 1:nrow(MA)){
-    out = LinearMasked(units=layer_sizes_LS[2], mask=t(masks_LS[[1]]), bias=FALSE)(input_layer)
-    outs = append(outs,tf$expand_dims(out, axis=-1L))
-  }
-  h_LS = keras$layers$concatenate(outs, axis=-1L)
+  #outs = list()
+  #for (r in 1:nrow(MA)){
+    out = LinearMasked(units=layer_sizes_LS[2], mask=t(masks_LS[[1]]), bias=FALSE, name='beta')(input_layer) 
+    
+  #  outs = append(outs,tf$expand_dims(out, axis=-1L))
+  #}
+  h_LS = tf$expand_dims(out, axis=-1L)#keras$layers$concatenate(outs, axis=-1L)
   
   #Keras does not work with lists (only in eager mode)
   #model = keras_model(inputs = input_layer, outputs = list(h_I, h_CS, h_LS))
   #Dimensions h_I (B,3,30) h_CS (B, 3, 1) h_LS(B, 3, 3)
   # Convention for stacking
   # 1       CS
-  # 2->|X|+2 LS
+  # 2->|X|+1 LS
   # |X|+2 --> Ende M 
-  outputs_tensor = keras$layers$concatenate(list(h_I, h_CS, h_LS), axis=-1L)
+  outputs_tensor = keras$layers$concatenate(list(h_CS, h_LS, h_I), axis=-1L)
   param_model = keras_model(inputs = input_layer, outputs = outputs_tensor)
   return(param_model)
 }
@@ -108,7 +109,7 @@ bernstein_basis <- function(tensor, M) {
 LinearMasked(keras$layers$Layer) %py_class% {
   
   initialize <- function(units = 32, mask = NULL, bias=TRUE, name = NULL, trainable = NULL, dtype = NULL) {
-    super$initialize()
+    super$initialize(name = name)
     self$units <- units
     self$mask <- mask  # Add a mask parameter
     self$bias = bias
@@ -306,15 +307,13 @@ struct_dag_loss = function (t_i, h_params){
   # the second to |X|+1 are the LS
   # the 2+|X|+1 to the end is H_I
   h_cs <- h_params[,,1, drop = FALSE]
-  h_ls <- h_params[,,2:4, drop = FALSE]
-  h_ci <- h_params[,,5:dim(h_params)[3], drop = FALSE]
+  h_ls <- h_params[,,2, drop = FALSE]
+  theta_tilde <- h_params[,,3:dim(h_params)[3], drop = FALSE]
   #CI 
-  theta_tilde = h_ci#h_params[[1]]
   theta = to_theta3(theta_tilde)
   h_I = h_dag_extra(t_i, theta)
   #LS
-  beta = h_ls
-  h_LS = tf$einsum('bx,bxx->bx', t_i, beta)
+  h_LS = tf$squeeze(h_ls, axis=-1L)#tf$einsum('bx,bxx->bx', t_i, beta)
   #CS
   h_CS = tf$squeeze(h_cs, axis=-1L)
   
@@ -323,8 +322,13 @@ struct_dag_loss = function (t_i, h_params){
   #Compute terms for change of variable formula
   log_latent_density = -h - 2 * tf$math$softplus(-h) #log of logistic density at h
   ## h' dh/dtarget is 0 for all shift terms
-  h_dash = tf$math$log(tf$math$abs(h_dag_dash_extra(t_i, theta)))
-  log_lik = log_latent_density + tf$math$log(tf$math$abs(h_dash))
+  log_hdash = tf$math$log(tf$math$abs(h_dag_dash_extra(t_i, theta)))
+  
+  log_lik = log_latent_density + log_hdash
+  ### DEBUG 
+  #if (sum(is.infinite(log_lik$numpy())) > 0){
+  #  print("Hall")
+  #}
   return (-tf$reduce_mean(log_lik))
 }
 

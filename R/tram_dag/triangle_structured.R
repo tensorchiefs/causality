@@ -1,8 +1,9 @@
 library(keras)
 library(tensorflow)
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
+source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 source('R/tram_dag/utils.R')
-fn = 'triangle_structured_weights_epochs=30.h5'
+fn = 'triangle_structured_weights_m2.h5'
 
 ##### TEMP
 dgp <- function(n_obs) {
@@ -26,7 +27,7 @@ train = dgp(20000)
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
 
-param_model = create_param_model(MA, hidden_features_I = hidden_features_I, len_theta = 30, hidden_features_CS = hidden_features_CS)
+param_model = create_param_model(MA, hidden_features_I = hidden_features_I, len_theta = 2, hidden_features_CS = hidden_features_CS)
 h_params = param_model(train$df_scaled)
 struct_dag_loss(train$df_scaled, h_params)
 
@@ -36,24 +37,57 @@ with(tf$GradientTape(persistent = TRUE) %as% tape, {
 })
 gradients = tape$gradient(loss, param_model$trainable_variables)
 gradients
+param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=30, hidden_features_CS=hidden_features_CS)
+
+
+# ######### DEBUG TRAINING FROM HAND #######
+# # Define the optimizer
+# optimizer <- tf$optimizers$Adam(lr=0.01)
+# # Define the number of epochs for training
+# num_epochs <- 10
+# for (epoch in 1:num_epochs) {
+#   with(tf$GradientTape(persistent = TRUE) %as% tape, {
+#     # Compute the model's prediction - forward pass
+#     h_params <- param_model(train$df_scaled)
+#     loss <- struct_dag_loss(train$df_scaled, h_params)
+#   })
+#   # Compute gradients
+#   gradients <- tape$gradient(loss, param_model$trainable_variables)
+#   # Apply gradients to update the model parameters
+#   optimizer$apply_gradients(purrr::transpose(list(gradients, param_model$trainable_variables)))
+#   # Print the loss every epoch or more frequently if desired
+#   print(paste("Epoch", epoch, ", Loss:", loss$numpy()))
+# }
+
 
 optimizer = optimizer_adam()
 param_model$compile(optimizer, loss=struct_dag_loss)
 param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
 
+
 ##### Training ####
 if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
-  hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 30L,verbose = TRUE)
+  hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 100L,verbose = TRUE)
   param_model$save_weights(fn)
   plot(hist$epoch, hist$history$loss)
 }
-
 param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
+param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
 
-########### TODO Check the sampling (prob needs w) #####
+h_params = param_model(train$df_scaled)
+h_params[,,2] / train$df_scaled[,1, drop=FALSE]
 
+o = train$df_orig$numpy()
+plot(o[,1],o[,2])
+lm(o[,2] ~ o[,1])
+
+s = train$df_scaled$numpy()
+plot(s[,1],s[,2])
+lm(s[,2] ~ s[,1])
+
+########### TODO Check the sampling (prob needs ad) #####
 s = do_dag(param_model, train$A, doX=c(NA, NA, NA))
 for (i in 1:3){
   d = s[,i]$numpy()
