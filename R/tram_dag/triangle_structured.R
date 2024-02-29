@@ -20,17 +20,31 @@ dgp <- function(n_obs) {
 } 
 
 #Bis jetzt alles CI
-
 MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 train = dgp(20000)
 
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
 
-param_model = create_param_model(MA, hidden_features_I = hidden_features_I, len_theta = 2, hidden_features_CS = hidden_features_CS)
+len_theta = 4
+param_model = create_param_model(MA, hidden_features_I = hidden_features_I, len_theta = len_theta, hidden_features_CS = hidden_features_CS)
 h_params = param_model(train$df_scaled)
-struct_dag_loss(train$df_scaled, h_params)
 
+# Check the derivatives of h w.r.t. x
+x <- tf$ones(shape = c(10L, 3L)) #B,P
+with(tf$GradientTape(persistent = TRUE) %as% tape, {
+  tape$watch(x)
+  y <- param_model(x)
+})
+d <- tape$jacobian(y, x)
+for (k in 1:(2+len_theta)){ #k = 1
+  print(k) #B,P,k,B,P
+  B = 1
+  print(d[B,,k,B,]) #
+}
+
+
+struct_dag_loss(train$df_scaled, h_params)
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   h_params = param_model(train$df_scaled)
   loss = struct_dag_loss(train$df_scaled, h_params)
@@ -76,8 +90,19 @@ if (file.exists(fn)){
 param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
 param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
 
-h_params = param_model(train$df_scaled)
-h_params[,,2] / train$df_scaled[,1, drop=FALSE]
+# Check the derivatives of h w.r.t. x
+x <- tf$ones(shape = c(10L, 3L)) #B,P
+with(tf$GradientTape(persistent = TRUE) %as% tape, {
+  tape$watch(x)
+  y <- param_model(x)
+})
+d <- tape$jacobian(y, x)
+for (k in 1:(2+len_theta)){ #k = 1
+  print(k) #B,P,k,B,P
+  B = 1
+  print(d[B,,k,B,]) #
+}
+
 
 o = train$df_orig$numpy()
 plot(o[,1],o[,2])
