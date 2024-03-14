@@ -27,7 +27,10 @@ hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
 
 len_theta = 4
-param_model = create_param_model(MA, hidden_features_I = hidden_features_I, len_theta = len_theta, hidden_features_CS = hidden_features_CS)
+param_model = create_param_model(MA, hidden_features_I = hidden_features_I, 
+                                 len_theta = len_theta, 
+                                 hidden_features_CS = hidden_features_CS)
+
 h_params = param_model(train$df_scaled)
 
 # Check the derivatives of h w.r.t. x
@@ -36,19 +39,39 @@ with(tf$GradientTape(persistent = TRUE) %as% tape, {
   tape$watch(x)
   y <- param_model(x)
 })
+# parameter (output) has shape B, P, k (num param)
+# derivation of param wrt to input x
+# input x has shape B, P
+# derivation d has shape B,P,k, B,P
 d <- tape$jacobian(y, x)
+d[1,,,2,] # only contains zero since independence of batches
+
+
+MA
+#      [,1] [,2] [,3]
+# [1,] "0"  "ls" "ci"
+# [2,] "0"  "0"  "cs"
+# [3,] "0"  "0"  "0" 
+# check which x_i is dependent on other x_j
+# k=1: cs, k=2:ls, rest of k: CI (len_theta params)
+# für k=1 sollte hur bei x2-->x3 ableitung !=0 sein: ok 
+# für k=2 sollte x1-->x2 abl !=0 sein: ok
+# für k=3...2+len_theta sollte sollte für x1-->x3 !=0 sein: ok
 for (k in 1:(2+len_theta)){ #k = 1
   print(k) #B,P,k,B,P
-  B = 1
+  B = 1 # first batch
   print(d[B,,k,B,]) #
 }
 
-
+# loss before training
 struct_dag_loss(train$df_scaled, h_params)
+
+
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   h_params = param_model(train$df_scaled)
   loss = struct_dag_loss(train$df_scaled, h_params)
 })
+
 gradients = tape$gradient(loss, param_model$trainable_variables)
 gradients
 param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=30, hidden_features_CS=hidden_features_CS)
@@ -83,11 +106,14 @@ param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
 if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
-  hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, epochs = 100L,verbose = TRUE)
+  hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, 
+                         epochs = 1000L,verbose = TRUE)
   param_model$save_weights(fn)
   plot(hist$epoch, hist$history$loss)
 }
 param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
+fn
+len_theta
 param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
 
 # Check the derivatives of h w.r.t. x
