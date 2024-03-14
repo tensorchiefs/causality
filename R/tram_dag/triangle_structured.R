@@ -31,8 +31,8 @@ param_model = create_param_model(MA, hidden_features_I = hidden_features_I,
                                  len_theta = len_theta, 
                                  hidden_features_CS = hidden_features_CS)
 
-h_params = param_model(train$df_scaled)
 
+h_params = param_model(train$df_scaled)
 # Check the derivatives of h w.r.t. x
 x <- tf$ones(shape = c(10L, 3L)) #B,P
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
@@ -74,6 +74,7 @@ with(tf$GradientTape(persistent = TRUE) %as% tape, {
 
 gradients = tape$gradient(loss, param_model$trainable_variables)
 gradients
+
 param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=30, hidden_features_CS=hidden_features_CS)
 
 
@@ -129,7 +130,6 @@ for (k in 1:(2+len_theta)){ #k = 1
   print(d[B,,k,B,]) #
 }
 
-
 o = train$df_orig$numpy()
 plot(o[,1],o[,2])
 lm(o[,2] ~ o[,1])
@@ -138,15 +138,15 @@ s = train$df_scaled$numpy()
 plot(s[,1],s[,2])
 lm(s[,2] ~ s[,1])
 
-########### TODO Check the sampling (prob needs ad) #####
-s = do_dag(param_model, train$A, doX=c(NA, NA, NA))
+s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 500)
 for (i in 1:3){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
-  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("X_",i))
+  hist(d, freq=FALSE, 20, xlim=c(0.1,1.1), main=paste0("X_",i))
   lines(density(train$df_scaled$numpy()[,i]))
 }
 
+########### TODO Check the sampling (prob needs ad) #####
 s = do_dag(param_model, train$A, doX=c(0.5, NA, NA))
 for (i in 1:3){
   d = s[,i]$numpy()
