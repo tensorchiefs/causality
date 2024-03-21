@@ -6,7 +6,8 @@ create_theta_tilde_maf = function(adjacency, len_theta, layer_sizes){
     d = input_layer
     for (i in 2:(length(layer_sizes) - 1)) {
       d = LinearMasked(units=layer_sizes[i], mask=t(masks[[i-1]]))(d)
-      d = layer_activation(activation='relu')(d)
+      #d = layer_activation(activation='relu')(d)
+      d = layer_activation(activation='sigmoid')(d)
     }
     out = LinearMasked(units=layer_sizes[length(layer_sizes)], mask=t(masks[[length(layer_sizes) - 1]]))(d)
     outs = append(outs,tf$expand_dims(out, axis=-1L)) #Expand last dim for concatenating
@@ -20,43 +21,73 @@ create_param_net <- function(len_param, input_layer, layer_sizes, masks, last_la
   outs = list()
   for (r in 1:len_param){
     d = input_layer
-    for (i in 2:(length(layer_sizes) - 1)) {
-      d = LinearMasked(units=layer_sizes[i], mask=t(masks[[i-1]]))(d)
-      d = layer_activation(activation='relu')(d)
-    }
+    if (length(layer_sizes) > 2){ #Hidden Layers
+      for (i in 2:(length(layer_sizes) - 1)) {
+        d = LinearMasked(units=layer_sizes[i], mask=t(masks[[i-1]]))(d)
+        #d = layer_activation(activation='relu')(d)
+        d = layer_activation(activation='sigmoid')(d)
+      }
+    } #add output layers
     out = LinearMasked(units=layer_sizes[length(layer_sizes)], mask=t(masks[[length(layer_sizes) - 1]]),bias=last_layer_bias)(d)
     outs = append(outs,tf$expand_dims(out, axis=-1L)) #Expand last dim for concatenating
   }
   outs_c = keras$layers$concatenate(outs, axis=-1L)
 }
 
+# Creates a keras layer which takes as input (None, |x|) and returns (None, |x|, 1) which are all zero 
+create_null_net <- function(input_layer) {
+  output_layer <- layer_lambda(input_layer, function(x) {
+    # Create a tensor of zeros with the same shape as x
+    zeros_like_x <- k_zeros_like(x)
+    # Add an extra dimension to match the desired output shape (None, |x|, 1)
+    expanded_zeros_like_x <- k_expand_dims(zeros_like_x, -1)
+    return(expanded_zeros_like_x)
+  })
+  return(output_layer)
+}
+
+# Creates a keras layer which takes as input (None, |x|) and returns (None, |x|, len) which are all constant variables
+
+
 create_param_model = function(MA, hidden_features_I = c(2,2), len_theta=30, hidden_features_CS = c(2,2)){
   input_layer <- layer_input(shape = list(ncol(MA)))
  
   ##### Creating the Intercept Model
-  layer_sizes_I <- c(ncol(MA), hidden_features_I, nrow(MA))
-  masks_I = create_masks(adjacency =  t(MA == 'ci'), hidden_features_I)
-  #dag_maf_plot(masks_I, layer_sizes_I)
-  h_I = create_param_net(len_param = len_theta, input_layer=input_layer, layer_sizes = layer_sizes_I, masks_I, last_layer_bias=TRUE)
-
+  if ('ci' %in% MA == TRUE) { # At least one 'ci' in model
+    layer_sizes_I <- c(ncol(MA), hidden_features_I, nrow(MA))
+    masks_I = create_masks(adjacency =  t(MA == 'ci'), hidden_features_I)
+    h_I = create_param_net(len_param = len_theta, input_layer=input_layer, layer_sizes = layer_sizes_I, masks_I, last_layer_bias=TRUE)
+    #dag_maf_plot(masks_I, layer_sizes_I)
+    #model_ci = keras_model(inputs = input_layer, h_I)
+  } else { # Adding simple interceps
+    layer_sizes_I = c(ncol(MA), nrow(MA))
+    masks_I = list(matrix(FALSE, nrow=nrow(MA), ncol=ncol(MA)))
+    h_I = create_param_net(len_param = len_theta, input_layer=input_layer, layer_sizes = layer_sizes_I, masks_I, last_layer_bias=TRUE)
+  }
+    
   ##### Creating the Complex Shift Model
-  layer_sizes_CS <- c(ncol(MA), hidden_features_I, nrow(MA))
-  masks_CS = create_masks(adjacency =  t(MA == 'cs'), hidden_features_CS)
-  #dag_maf_plot(masks_CS, layer_sizes_CS)
-  h_CS = create_param_net(len_param = 1, input_layer=input_layer, layer_sizes = layer_sizes_CS, masks_CS, last_layer_bias=FALSE)
+  if ('cs' %in% MA == TRUE) { # At least one 'cs' in model
+    layer_sizes_CS <- c(ncol(MA), hidden_features_CS, nrow(MA))
+    masks_CS = create_masks(adjacency =  t(MA == 'cs'), hidden_features_CS)
+    h_CS = create_param_net(len_param = 1, input_layer=input_layer, layer_sizes = layer_sizes_CS, masks_CS, last_layer_bias=FALSE)
+    #dag_maf_plot(masks_CS, layer_sizes_CS)
+    # model_cs = keras_model(inputs = input_layer, h_CS)
+  } else { #No 'cs' term in model --> return zero
+    h_CS = create_null_net(input_layer)
+  }
   
   ##### Creating the Linear Shift Model
+  if ('ls' %in% MA == TRUE) {
   #h_LS = keras::layer_dense(input_layer, use_bias = FALSE, units = 1L)
-  layer_sizes_LS <- c(ncol(MA), nrow(MA))
-  masks_LS = create_masks(adjacency =  t(MA == 'ls'), c())
-  #outs = list()
-  #for (r in 1:nrow(MA)){
-    out = LinearMasked(units=layer_sizes_LS[2], mask=t(masks_LS[[1]]), bias=FALSE, name='beta')(input_layer) 
-    
-  #  outs = append(outs,tf$expand_dims(out, axis=-1L))
-  #}
-  h_LS = tf$expand_dims(out, axis=-1L)#keras$layers$concatenate(outs, axis=-1L)
-  
+      layer_sizes_LS <- c(ncol(MA), nrow(MA))
+      masks_LS = create_masks(adjacency =  t(MA == 'ls'), c())
+      out = LinearMasked(units=layer_sizes_LS[2], mask=t(masks_LS[[1]]), bias=FALSE, name='beta')(input_layer) 
+      h_LS = tf$expand_dims(out, axis=-1L)#keras$layers$concatenate(outs, axis=-1L)
+      #dag_maf_plot(masks_LS, layer_sizes_LS)
+      #model_ls = keras_model(inputs = input_layer, h_LS)
+  } else {
+      h_LS = create_null_net(input_layer)
+  }
   #Keras does not work with lists (only in eager mode)
   #model = keras_model(inputs = input_layer, outputs = list(h_I, h_CS, h_LS))
   #Dimensions h_I (B,3,30) h_CS (B, 3, 1) h_LS(B, 3, 3)
@@ -183,7 +214,7 @@ LinearMasked(keras$layers$Layer) %py_class% {
 
 ###### Pure R Function ####
 # Creates Autoregressive masks for a given adjency matrix and hidden features
-create_masks <- function(adjacency, hidden_features=c(64, 64), activation='relu') {
+create_masks <- function(adjacency, hidden_features=c(64, 64)) {
   out_features <- nrow(adjacency)
   in_features <- ncol(adjacency)
   

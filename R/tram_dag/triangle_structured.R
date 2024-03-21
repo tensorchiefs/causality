@@ -3,7 +3,7 @@ library(tensorflow)
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 source('R/tram_dag/utils.R')
-fn = 'triangle_structured_weights_m2.h5'
+fn = 'triangle_structured_weights_model_ls_sigmoid_long.h5'
 
 ##### TEMP
 dgp <- function(n_obs) {
@@ -19,22 +19,25 @@ dgp <- function(n_obs) {
     return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
 } 
 
-#Bis jetzt alles CI
-MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 train = dgp(20000)
 
+#Bis jetzt alles CI
+#MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
+#MA =  matrix(c(0, 'ls', 'ls', 0,0,'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
+MA =  matrix(c(0, 'ls', 'ls', 0,0, 'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
-
-len_theta = 4
+len_theta = 2
 param_model = create_param_model(MA, hidden_features_I = hidden_features_I, 
                                  len_theta = len_theta, 
                                  hidden_features_CS = hidden_features_CS)
 
-
+x = tf$ones(shape = c(2L, 3L))
+param_model(1*x)
+MA
 h_params = param_model(train$df_scaled)
 # Check the derivatives of h w.r.t. x
-x <- tf$ones(shape = c(10L, 3L)) #B,P
+x <- tf$ones(shape = c(2L, 3L)) #B,P
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   tape$watch(x)
   y <- param_model(x)
@@ -108,7 +111,7 @@ if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
   hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, 
-                         epochs = 1000L,verbose = TRUE)
+                         epochs = 5000L,verbose = TRUE)
   param_model$save_weights(fn)
   plot(hist$epoch, hist$history$loss)
 }
@@ -134,11 +137,15 @@ o = train$df_orig$numpy()
 plot(o[,1],o[,2])
 lm(o[,2] ~ o[,1])
 
-s = train$df_scaled$numpy()
-plot(s[,1],s[,2])
-lm(s[,2] ~ s[,1])
+d = train$df_scaled$numpy()
+plot(d[,1],d[,2])
+lm(d[,2] ~ d[,1])
 
-s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 500)
+lm(d[,3] ~ d[,1] + d[,2]) #Direct causal effect 0.28
+
+
+# Sampling fitted model w/o intervention --> OK 
+s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 5000)
 for (i in 1:3){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
@@ -146,14 +153,48 @@ for (i in 1:3){
   lines(density(train$df_scaled$numpy()[,i]))
 }
 
-########### TODO Check the sampling (prob needs ad) #####
-s = do_dag(param_model, train$A, doX=c(0.5, NA, NA))
+########### Do(x1) seems to work#####
+s = do_dag_struct(param_model, train$A, doX=c(0.5, NA, NA))
 for (i in 1:3){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
+  print(mean(d))
   hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
-  lines(density(train$df_scaled$numpy()[,i]))
+  #lines(density(train$df_scaled$numpy()[,i]))
 }
+
+s = do_dag_struct(param_model, train$A, doX=c(0.7, NA, NA))
+for (i in 1:3){
+  d = s[,i]$numpy()
+  d = d[d>0 & d<1]
+  print(mean(d))
+  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
+  #lines(density(train$df_scaled$numpy()[,i]))
+}
+
+
+########### Do(x2) seem to work #####
+s = do_dag_struct(param_model, train$A, doX=c(NA, 0.5, NA))
+for (i in 1:3){
+  d = s[,i]$numpy()
+  d = d[d>0 & d<1]
+  print(mean(d))
+  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
+  #lines(density(train$df_scaled$numpy()[,i]))
+}
+
+s = do_dag_struct(param_model, train$A, doX=c(NA, 0.7, NA))
+for (i in 1:3){
+  d = s[,i]$numpy()
+  d = d[d>0 & d<1]
+  print(mean(d))
+  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
+  #lines(density(train$df_scaled$numpy()[,i]))
+}
+
+
+
+########### TODO Check the sampling (prob needs ad) #####
 
 dox1_2=scale_value(train$df_orig, col=1L, 2) #On X2
 s_dox1_2 = do_dag(param_model, train$A, doX=c(dox1_2$numpy(), NA, NA), num_samples = 5000)
