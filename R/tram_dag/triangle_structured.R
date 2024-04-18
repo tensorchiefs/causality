@@ -3,7 +3,7 @@ library(tensorflow)
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 source('R/tram_dag/utils.R')
-fn = 'triangle_structured_weights_model_ls_sigmoid_long.h5'
+fn = 'triangle_colr_3.h5'
 
 ##### TEMP
 dgp <- function(n_obs) {
@@ -44,7 +44,7 @@ train = dgp(20000)
 MA =  matrix(c(0, 'ls', 'ls', 0,0, 'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
-len_theta = 2
+len_theta = 6
 param_model = create_param_model(MA, hidden_features_I = hidden_features_I, 
                                  len_theta = len_theta, 
                                  hidden_features_CS = hidden_features_CS)
@@ -95,7 +95,7 @@ with(tf$GradientTape(persistent = TRUE) %as% tape, {
 gradients = tape$gradient(loss, param_model$trainable_variables)
 gradients
 
-param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=30, hidden_features_CS=hidden_features_CS)
+param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=len_theta, hidden_features_CS=hidden_features_CS)
 
 
 # ######### DEBUG TRAINING FROM HAND #######
