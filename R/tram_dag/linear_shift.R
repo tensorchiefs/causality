@@ -3,58 +3,63 @@ library(tensorflow)
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 source('R/tram_dag/utils.R')
-fn = 'triangle_structured_weights_model_ls_sigmoid_long.h5'
+fn = 'ls_sigmoid_long10k_M6.h5'
 
 ##### TEMP
 dgp <- function(n_obs) {
-    #n_obs = 1e5 n_obs = 10
-    #Sample X_1 from GMM with 2 components
-    X_1_A = rnorm(n_obs, 0.25, 0.1)
-    X_1_B = rnorm(n_obs, 0.73, 0.05)
-    X_1 = ifelse(sample(1:2, replace = TRUE, size = n_obs) == 1, X_1_A, X_1_B)
-    #hist(X_1)
+    X_1 = rnorm(n_obs)
     
     # Sampling according to colr
-    U2 = runif(n_obs)
-    x_2_dash = qlogis(U2)
+    p = runif(n_obs)
+    x_2_dash = qlogis(p)
+    #Checking if x_2_dash is from logistic
+    #hist(x_2_dash, freq=FALSE,100)
+    #xx = seq(-5,5,0.1)
+    #lines(xx, dlogis(xx), col='red', lwd=2)
+    #checked
+    
     #x_2_dash = h_0(x_2 + beta * X_1)
     X_2 = 1/0.42 * (x_2_dash - 2 * X_1)
-    #hist(X_2)
-    
-    # Sampling according to colr
-    U3 = runif(n_obs)
-    x_3_dash = qlogis(U3)
-    #x_3_dash = h_0_3(x_3 + gamma_1 * X_1 + gamma_2 * X_2)
-    #x_3_dash = 0.63 * x_3 -0.2 * X_1 + 1.3 * X_2
-    X_3 = (x_3_dash + 0.2 * X_1 - 1.3 * X_2)/0.63
-    #hist(X_3)
-    
-    dat.s =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3)
+    #Sampling from 
+    dat.s =  data.frame(x1 = X_1, x2 = X_2)
     dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
     scaled = scale_df(dat.tf) * 0.99 + 0.005
-    A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
+    #A rows from, cols to (upper triangle)
+    A <- matrix(c(0, 1, 0,0), nrow = 2, ncol = 2, byrow = TRUE)
     return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
 } 
 
 train = dgp(20000)
+# Fitting Tram
+library(tram)
+df = data.frame(train$df_scaled$numpy())
+fit.orig = Colr(X2~X1,df)
+summary(fit.orig)
+
+df = data.frame(train$df_scaled$numpy())
+fit.scaled = Colr(X2~X1,df)
+summary(fit.scaled)
+
+
 
 #Bis jetzt alles CI
 #MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 #MA =  matrix(c(0, 'ls', 'ls', 0,0,'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
-MA =  matrix(c(0, 'ls', 'ls', 0,0, 'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
+MA =  matrix(c(0, 'ls', 0,0), nrow = 2, ncol = 2, byrow = TRUE)
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
-len_theta = 2
+len_theta = 10
 param_model = create_param_model(MA, hidden_features_I = hidden_features_I, 
                                  len_theta = len_theta, 
                                  hidden_features_CS = hidden_features_CS)
 
-x = tf$ones(shape = c(2L, 3L))
-param_model(1*x)
+x = tf$ones(shape = c(3L, 2L))
+h_params_1 = param_model(1*x)
+h_params_1[1,1,] #First two should be 0
+h_params_1[1,2,] #First CS should be 0
 MA
-h_params = param_model(train$df_scaled)
 # Check the derivatives of h w.r.t. x
-x <- tf$ones(shape = c(2L, 3L)) #B,P
+x <- tf$ones(shape = c(3L, 2L)) #B,P
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   tape$watch(x)
   y <- param_model(x)
@@ -68,15 +73,10 @@ d[1,,,2,] # only contains zero since independence of batches
 
 
 MA
-#      [,1] [,2] [,3]
-# [1,] "0"  "ls" "ci"
-# [2,] "0"  "0"  "cs"
-# [3,] "0"  "0"  "0" 
-# check which x_i is dependent on other x_j
-# k=1: cs, k=2:ls, rest of k: CI (len_theta params)
-# für k=1 sollte hur bei x2-->x3 ableitung !=0 sein: ok 
-# für k=2 sollte x1-->x2 abl !=0 sein: ok
-# für k=3...2+len_theta sollte sollte für x1-->x3 !=0 sein: ok
+#     [,1] [,2]
+#[1,] "0"  "ls"
+#[2,] "0"  "0" 
+# Nur der zweite !=0 
 for (k in 1:(2+len_theta)){ #k = 1
   print(k) #B,P,k,B,P
   B = 1 # first batch
@@ -84,9 +84,8 @@ for (k in 1:(2+len_theta)){ #k = 1
 }
 
 # loss before training
+h_params = param_model(train$df_scaled)
 struct_dag_loss(train$df_scaled, h_params)
-
-
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   h_params = param_model(train$df_scaled)
   loss = struct_dag_loss(train$df_scaled, h_params)
@@ -95,7 +94,7 @@ with(tf$GradientTape(persistent = TRUE) %as% tape, {
 gradients = tape$gradient(loss, param_model$trainable_variables)
 gradients
 
-param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=30, hidden_features_CS=hidden_features_CS)
+param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=6, hidden_features_CS=hidden_features_CS)
 
 
 # ######### DEBUG TRAINING FROM HAND #######
@@ -128,17 +127,17 @@ if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
   hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, 
-                         epochs = 5000L,verbose = TRUE)
+                         epochs = 10000L,verbose = TRUE)
   param_model$save_weights(fn)
-  plot(hist$epoch, hist$history$loss)
+  plot(hist$epoch, hist$history$loss, xlim=c(6000, 10000), ylim=c(-1.22,-1.25))
 }
 param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
 fn
-len_theta
+
 param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
 
 # Check the derivatives of h w.r.t. x
-x <- tf$ones(shape = c(10L, 3L)) #B,P
+x <- tf$ones(shape = c(10L, 2L)) #B,P
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   tape$watch(x)
   y <- param_model(x)
@@ -152,23 +151,26 @@ for (k in 1:(2+len_theta)){ #k = 1
 
 o = train$df_orig$numpy()
 plot(o[,1],o[,2])
-lm(o[,2] ~ o[,1])
+fit = lm(o[,2] ~ o[,1])
+confint(fit)
 
 d = train$df_scaled$numpy()
 plot(d[,1],d[,2])
-lm(d[,2] ~ d[,1])
-
-lm(d[,3] ~ d[,1] + d[,2]) #Direct causal effect 0.28
+fit = lm(d[,2] ~ d[,1])
+confint(fit)
 
 
 # Sampling fitted model w/o intervention --> OK 
-s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 5000)
-for (i in 1:3){
+s = do_dag_struct(param_model, train$A, doX=c(NA, NA), num_samples = 5000)
+for (i in 1:2){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
   hist(d, freq=FALSE, 20, xlim=c(0.1,1.1), main=paste0("X_",i))
   lines(density(train$df_scaled$numpy()[,i]))
 }
+library(car)
+qqplot(s$numpy()[,2], train$df_scaled$numpy()[,2], xlim=c(0,1))
+abline(0,1)
 
 ########### Do(x1) seems to work#####
 s = do_dag_struct(param_model, train$A, doX=c(0.5, NA, NA))
