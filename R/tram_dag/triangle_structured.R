@@ -1,34 +1,47 @@
 library(keras)
 library(tensorflow)
-source('R/tram_dag/utils_dag_maf.R') #Might be called twice
+source('R/tram_dag/utils_dag_maf.R') #Might be called twics
 source('R/tram_dag/utils_dag_maf.R') #Might be called twice
 source('R/tram_dag/utils.R')
 fn = 'triangle_colr_3.h5'
 
 ##### TEMP
-dgp <- function(n_obs) {
+dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     #n_obs = 1e5 n_obs = 10
     #Sample X_1 from GMM with 2 components
-    X_1_A = rnorm(n_obs, 0.25, 0.1)
-    X_1_B = rnorm(n_obs, 0.73, 0.05)
-    X_1 = ifelse(sample(1:2, replace = TRUE, size = n_obs) == 1, X_1_A, X_1_B)
+    if (is.na(doX[1])){
+      X_1_A = rnorm(n_obs, 0.25, 0.1)
+      X_1_B = rnorm(n_obs, 0.73, 0.05)
+      X_1 = ifelse(sample(1:2, replace = TRUE, size = n_obs) == 1, X_1_A, X_1_B)
+    } else{
+      X_1 = rep(doX[1], n_obs)
+    }
     #hist(X_1)
     
     # Sampling according to colr
-    U2 = runif(n_obs)
-    x_2_dash = qlogis(U2)
-    #x_2_dash = h_0(x_2 + beta * X_1)
-    X_2 = 1/0.42 * (x_2_dash - 2 * X_1)
+    if (is.na(doX[2])){
+      U2 = runif(n_obs)
+      x_2_dash = qlogis(U2)
+      #x_2_dash = h_0(x_2 + beta * X_1)
+      X_2 = 1/0.42 * (x_2_dash - 2 * X_1)
+    } else{
+      X_2 = rep(doX[2], n_obs)
+    }
+    
     #hist(X_2)
     
     # Sampling according to colr
-    U3 = runif(n_obs)
-    x_3_dash = qlogis(U3)
-    #x_3_dash = h_0_3(x_3 + gamma_1 * X_1 + gamma_2 * X_2)
-    #x_3_dash = 0.63 * x_3 -0.2 * X_1 + 1.3 * X_2
-    X_3 = (x_3_dash + 0.2 * X_1 - 1.3 * X_2)/0.63
+    if (is.na(doX[3])){
+      U3 = runif(n_obs)
+      x_3_dash = qlogis(U3)
+      #x_3_dash = h_0_3(x_3 + gamma_1 * X_1 + gamma_2 * X_2)
+      #x_3_dash = 0.63 * x_3 -0.2 * X_1 + 1.3 * X_2
+      X_3 = (x_3_dash + 0.2 * X_1 - 1.3 * X_2)/0.63
+    } else{
+      X_3 = rep(doX[3], n_obs)
+    }
+   
     #hist(X_3)
-    
     dat.s =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3)
     dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
     scaled = scale_df(dat.tf) * 0.99 + 0.005
@@ -36,8 +49,16 @@ dgp <- function(n_obs) {
     return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
 } 
 
-train = dgp(20000)
+scaled_doX = function(doX, train){
+  dat_tf = train$df_orig
+  dat_min = tf$reduce_min(dat_tf, axis=0L)
+  dat_max = tf$reduce_max(dat_tf, axis=0L)
+  ret = (doX - dat_min) / (dat_max - dat_min)
+  return(ret * 0.99 + 0.005)
+}
 
+
+train = dgp(20000)
 #Bis jetzt alles CI
 #MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 #MA =  matrix(c(0, 'ls', 'ls', 0,0,'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
@@ -170,8 +191,23 @@ for (i in 1:3){
   lines(density(train$df_scaled$numpy()[,i]))
 }
 
+######### Simulation of do-interventions #####
+doX=c(0.5, NA, NA)
+dx5 = dgp(10000, doX=doX)
+dx5$df_orig$numpy()[1:5,]
+dx5$df_scaled$numpy()[1:5,]
+s_0.5 = scaled_doX(doX, train)[1]$numpy()
+
+
+doX=c(0.7, NA, NA)
+dx7 = dgp(10000, doX=doX)
+hist(dx5$df_orig$numpy()[,2], freq=FALSE,100)
+mean(dx7$df_orig$numpy()[,2]) - mean(dx5$df_orig$numpy()[,2])  
+mean(dx7$df_orig$numpy()[,3]) - mean(dx5$df_orig$numpy()[,3])  
+s_0.7 = scaled_doX(doX, train)[1]$numpy()
+
 ########### Do(x1) seems to work#####
-s = do_dag_struct(param_model, train$A, doX=c(0.5, NA, NA))
+s = do_dag_struct(param_model, train$A, doX=c(s_0.5, NA, NA))
 for (i in 1:3){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
@@ -179,16 +215,33 @@ for (i in 1:3){
   hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
   #lines(density(train$df_scaled$numpy()[,i]))
 }
+sdown = unscale(train$df_orig, s)
+hist(sdown$numpy()[,3], freq=FALSE)
+median(sdown$numpy()[,3])
 
-s = do_dag_struct(param_model, train$A, doX=c(0.7, NA, NA))
+s = do_dag_struct(param_model, train$A, doX=c(s_0.7, NA, NA))
 for (i in 1:3){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
   print(mean(d))
-  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
+  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.7) X_",i))
   #lines(density(train$df_scaled$numpy()[,i]))
 }
+sup = unscale(train$df_orig, s)
+hist(sup$numpy()[,3], freq=FALSE)
+mean(sup$numpy()[,3])
 
+mean(sup$numpy()[,2]) - mean(sdown$numpy()[,2])
+mean(sup$numpy()[,3]) - mean(sdown$numpy()[,3])
+
+median(sup$numpy()[,2]) - median(sdown$numpy()[,2])
+median(sup$numpy()[,3]) - median(sdown$numpy()[,3])
+
+
+####################################################################################
+################ Below not tested after refactoring to new DGPs (Using Tranformation models in DGP) 
+############################
+####################################################################################
 
 ########### Do(x2) seem to work #####
 s = do_dag_struct(param_model, train$A, doX=c(NA, 0.5, NA))
