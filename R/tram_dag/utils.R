@@ -12,7 +12,7 @@ library(MASS)
 library(tensorflow)
 library(keras)
 library(tidyverse)
-library(tfprobability)
+#library(tfprobability)
 
 source('tram_scm/bern_utils.R')
 source('tram_scm/model_utils.R')

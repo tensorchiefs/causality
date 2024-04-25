@@ -42,3 +42,5 @@ R/hidden_confounder_lin
 .DS_Store
 data/CAREFL_CF/Readme_files/*
 data/VACA1_triangle_lin/attick/*
+*.h5
+/tmp_oliver
