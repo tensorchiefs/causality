@@ -14,7 +14,7 @@ library(keras)
 library(tidyverse)
 #library(tfprobability)
 
-source('tram_scm/bern_utils.R')
+source('R/tram_dag/bern_utils.R')
 source('tram_scm/model_utils.R')
 
 version_info = function(){
