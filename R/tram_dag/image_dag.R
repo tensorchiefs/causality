@@ -26,12 +26,13 @@ fn = 'image_dag.h5'
 library(fields)
 
 ### Loading CIFAR10 data
-cifar10 <- dataset_cifar10()
+my_images <- dataset_mnist()
 ## Getting Training data
-train_images <- cifar10$train$x
-train_labels <- cifar10$train$y
+n_obs = 20
+train_images <- my_images$train$x[1:n_obs]
+train_labels <- my_images$train$y[1:n_obs]
 
-plot_cifar <- function(img_array, main_label) {
+plot_images <- function(img_array, main_label) {
   # Convert the image data to a format suitable for rasterImage (adjust dimensions)
   # Normalize the pixel values to [0, 1]
   img_array <- img_array / 255
@@ -92,7 +93,7 @@ scaled_doX = function(doX, train){
 }
 
 
-train = dgp(2000, 1:2000)
+train = dgp(n_obs, 1:n_obs )
 #Bis jetzt alles CI
 #MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 #MA =  matrix(c(0, 'ls', 'ls', 0,0,'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
@@ -100,22 +101,61 @@ MA =  matrix(c(0, 'ls', 'ls', 0,0, 'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
 len_theta = 6
-param_model = create_param_model(MA, hidden_features_I = hidden_features_I, 
+tabular_model = create_param_model(MA, hidden_features_I = hidden_features_I, 
                                  len_theta = len_theta, 
                                  hidden_features_CS = hidden_features_CS)
-###### create a cnn model
-cnn_model <- keras_model_sequential() %>%
-  layer_conv_2d(filters = 32, kernel_size = c(3,3), activation = 'relu', input_shape = input_shape) %>% 
-  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
-  layer_conv_2d(filters = 64, kernel_size = c(3,3), activation = 'relu') %>% 
-  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
-  layer_dropout(rate = 0.25) %>% 
-  layer_flatten() %>% 
-  layer_dense(units = 128, activation = 'relu') %>% 
-  layer_dropout(rate = 0.5) %>% 
-  layer_dense(units = 1, activation = 'softmax')
 
-cnn_model(train_images[1:10,,,])
+tabular_out = tabular_model$output
+
+tabular_model(train$df_scaled)
+
+
+###### create a cnn model
+input_shape <- c(28, 28, 1)
+
+# Define the CNN model using the functional API
+cnn_input <- layer_input(shape = input_shape)
+
+conv1 <- layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = 'relu')(cnn_input)
+pool1 <- layer_max_pooling_2d(pool_size = c(2, 2))(conv1)
+
+conv2 <- layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = 'relu')(pool1)
+pool2 <- layer_max_pooling_2d(pool_size = c(2, 2))(conv2)
+
+dropout <- layer_dropout(rate = 0.25)(pool2)
+
+flatten <- layer_flatten()(dropout)
+
+dense1 <- layer_dense(units = 128, activation = 'relu')(flatten)
+dropout2 <- layer_dropout(rate = 0.5)(dense1)
+
+cnn_out <- layer_dense(units = 1, activation = 'linear')(dropout2)
+
+repeated_tensor <- layer_repeat_vector(n = 3)(cnn_out)
+
+# Reshape the tensor
+cnn_out2 <- layer_reshape(target_shape = c(3, 1))(repeated_tensor)
+
+merged_output <- layer_concatenate(list(cnn_out2, tabular_out))
+
+# Define final model
+final_model <- keras_model(inputs = list(cnn_input, dnn_input), outputs = merged_output)
+
+Bis dahin sind wir gekommen
+
+
+# Define the model
+cnn_model <- keras_model(inputs = cnn_input, outputs = output)
+
+# Compile the model
+cnn_model %>% compile(
+  loss = 'mean_squared_error',
+  optimizer = 'adam',
+  metrics = c('accuracy')
+)
+
+# Print model summary
+summary(cnn_model)
 
 
 
