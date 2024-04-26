@@ -1,8 +1,27 @@
 library(keras)
 library(tensorflow)
-source('R/tram_dag/utils_dag_maf.R') #Might be called twice
-source('R/tram_dag/utils_dag_maf.R') #Might be called twice
-source('R/tram_dag/utils.R')
+if (FALSE){
+  ### Old Style Libraries### 
+  source('R/tram_dag/utils_dag_maf.R') #Might be called twice
+  source('R/tram_dag/utils_dag_maf.R') #Might be called twice
+  source('R/tram_dag/utils.R')
+} else{
+  ##################################
+  ##### Utils for tram_dag #########
+  library(mlt)
+  library(tram)
+  library(MASS)
+  library(tensorflow)
+  library(keras)
+  library(tidyverse)
+  source('R/tram_dag/utils_tf.R')
+  source('R/tram_dag/utils_tf.R') #Might be called twice (for oliver's mac)
+  
+  #### For TFP
+  library(tfprobability)
+  source('R/tram_dag/utils_tfp.R')
+}
+
 fn = 'ls_sigmoid_long10k_M6.h5'
 
 ##### TEMP
@@ -29,10 +48,9 @@ dgp <- function(n_obs) {
     return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
 } 
 
-train = dgp(20000)
+train = dgp(1000)
 # Fitting Tram
-library(tram)
-df = data.frame(train$df_scaled$numpy())
+df = data.frame(train$df_orig$numpy())
 fit.orig = Colr(X2~X1,df)
 summary(fit.orig)
 

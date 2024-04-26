@@ -1,10 +1,28 @@
-library(keras)
-library(tensorflow)
-source('R/tram_dag/utils_dag_maf.R') #Might be called twics
-source('R/tram_dag/utils_dag_maf.R') #Might be called twice
-source('R/tram_dag/utils.R')
-fn = 'triangle_colr_3.h5'
+if (FALSE){
+  ### Old Style Libraries### 
+  library(keras)
+  library(tensorflow)
+  source('R/tram_dag/utils_dag_maf.R') #Might be called twice
+  source('R/tram_dag/utils_dag_maf.R') #Might be called twice
+  source('R/tram_dag/utils.R')
+} else{
+  ##################################
+  ##### Utils for tram_dag #########
+  library(mlt)
+  library(tram)
+  library(MASS)
+  library(tensorflow)
+  library(keras)
+  library(tidyverse)
+  source('R/tram_dag/utils_tf.R')
+  source('R/tram_dag/utils_tf.R') #Might be called twice (Oliver's Laptop)
+  
+  #### For TFP
+  library(tfprobability)
+  source('R/tram_dag/utils_tfp.R')
+}
 
+fn = 'triangle_colr_3.h5'
 ##### TEMP
 dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     #n_obs = 1e5 n_obs = 10
@@ -263,9 +281,7 @@ for (i in 1:3){
 }
 
 
-
 ########### TODO Check the sampling (prob needs ad) #####
-
 dox1_2=scale_value(train$df_orig, col=1L, 2) #On X2
 s_dox1_2 = do_dag(param_model, train$A, doX=c(dox1_2$numpy(), NA, NA), num_samples = 5000)
 s = s_dox1_2

@@ -1,8 +1,27 @@
-library(keras)
-library(tensorflow)
-source('R/tram_dag/utils_dag_maf.R') #Might be called twice
-source('R/tram_dag/utils_dag_maf.R') #Might be called twice
-source('R/tram_dag/utils.R')
+if (FALSE){
+  ### Old Style Libraries### 
+  library(keras)
+  library(tensorflow)
+  source('R/tram_dag/utils_dag_maf.R') #Might be called twice
+  source('R/tram_dag/utils_dag_maf.R') #Might be called twice
+  source('R/tram_dag/utils.R')
+} else{
+  ##################################
+  ##### Utils for tram_dag #########
+  library(mlt)
+  library(tram)
+  library(MASS)
+  library(tensorflow)
+  library(keras)
+  library(tidyverse)
+  source('R/tram_dag/utils_tf.R')
+  source('R/tram_dag/utils_tf.R') #Might be called twice (Oliver's Laptop)
+  
+  #### For TFP
+  library(tfprobability)
+  source('R/tram_dag/utils_tfp.R')
+}
+
 fn = 'image_dag.h5'
 library(fields)
 
