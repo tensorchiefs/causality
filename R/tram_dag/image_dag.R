@@ -22,6 +22,44 @@ if (FALSE){
   source('R/tram_dag/utils_tfp.R')
 }
 
+############## Semi-structured DAG with image (Very Special to DAG in this file) ################
+semi_struct_dag_loss = function (t_i, h_params){
+  #### This function is used for the semi-structured model in which an image is included
+  h_params_tabular = h_params[,,1:(dim(h_params)[3]-1)]
+  h_params_image = h_params[,,dim(h_params)[3]]
+  
+  h_cs <- h_params_tabular[,,1, drop = FALSE]
+  h_ls <- h_params_tabular[,,2, drop = FALSE]
+  theta_tilde <- h_params_tabular[,,3:dim(h_params_tabular)[3], drop = FALSE]
+  
+  #CI 
+  theta = to_theta3(theta_tilde)
+  h_I = h_dag_extra(t_i, theta)  # batch, #Variables
+  #LS
+  h_LS = tf$squeeze(h_ls, axis=-1L)#tf$einsum('bx,bxx->bx', t_i, beta)
+  #CS
+  h_CS = tf$squeeze(h_cs, axis=-1L)  # batch, #Variables
+  
+  # CNN-eta(B)
+  h_eta_B = h_params_image  # batch, #Variables
+  
+  h = h_I + h_LS + h_CS + h_eta_B
+  
+  #Compute terms for change of variable formula
+  log_latent_density = -h - 2 * tf$math$softplus(-h) #log of logistic density at h
+  ## h' dh/dtarget is 0 for all shift terms
+  log_hdash = tf$math$log(tf$math$abs(h_dag_dash_extra(t_i, theta)))
+  
+  log_lik = log_latent_density + log_hdash
+  ### DEBUG 
+  #if (sum(is.infinite(log_lik$numpy())) > 0){
+  #  print("Hall")
+  #}
+  return (-tf$reduce_mean(log_lik))
+}
+
+
+
 fn = 'image_dag.h5' 
 library(fields)
 
