@@ -22,45 +22,49 @@ if (FALSE){
   source('R/tram_dag/utils_tfp.R')
 }
 
-fn = 'image_dag.h5'
+fn = 'image_dag.h5' 
 library(fields)
 
 ### Loading CIFAR10 data
+#my_images <- dataset_cifar10()
 my_images <- dataset_mnist()
+
 ## Getting Training data
-n_obs = 20
-train_images <- my_images$train$x[1:n_obs]
+n_obs = 20000
+train_images <- my_images$train$x[1:n_obs,,]
+dim(train_images)
 train_labels <- my_images$train$y[1:n_obs]
 
-plot_images <- function(img_array, main_label) {
-  # Convert the image data to a format suitable for rasterImage (adjust dimensions)
-  # Normalize the pixel values to [0, 1]
-  img_array <- img_array / 255
-  # Prepare plotting area and plot the image
-  plot(0:1, 0:1, type = "n", xlab = "", ylab = "", main = main_label, axes = FALSE)
-  rasterImage(img_array, 0, 0, 1, 1)
-}
-
-# Setting up the plot area
-par(mfrow = c(2, 5), mar = c(1, 1, 2, 1))
-
-# Loop through the first 10 images
-for (i in 1:10) {
-  # Reshape each image (keeping the color channel as the last dimension)
-  img <- train_images[i,,,]
-  # Determine label
-  label <- train_labels[i, 1] + 1 # Adjusting label index for 0-based indexing in R
-  # Plot the image
-  plot_cifar(img, main_label = paste("Label:", label))
-}
+# plot_images <- function(img_array, main_label) {
+#   # Convert the image data to a format suitable for rasterImage (adjust dimensions)
+#   # Normalize the pixel values to [0, 1]
+#   img_array <- img_array / 255
+#   # Prepare plotting area and plot the image
+#   plot(0:1, 0:1, type = "n", xlab = "", ylab = "", main = main_label, axes = FALSE)
+#   rasterImage(img_array, 0, 0, 1, 1)
+# }
+# 
+# # Setting up the plot area
+# par(mfrow = c(2, 5), mar = c(1, 1, 2, 1))
+# 
+# # Loop through the first 10 images
+# for (i in 1:10) {
+#   # Reshape each image (keeping the color channel as the last dimension)
+#   img <- train_images[i,,,]
+#   # Determine label
+#   label <- train_labels[i, 1] + 1 # Adjusting label index for 0-based indexing in R
+#   # Plot the image
+#   plot_cifar(img, main_label = paste("Label:", label))
+# }
 
 # Reset par to default
 par(mfrow = c(1, 1), mar = c(5, 4, 4, 2) + 0.1)
 
 ##### TEMP
 dgp <- function(n_obs, b_labels) {
-    x1 = ifelse(b_labels <= 5, 0, 1) #Images <=5 are "female" the other "male"
-    
+  # TODO Fix how to create X1 depending on labels of images
+    #x1 = ifelse(b_labels <= 5, 0, 1) #Images <=5 are "female" the other "male"
+    x1 = sample(c(0,1),size=n_obs,replace = TRUE) 
     ####### x2 
     u2 = rlogis(n_obs, location =  0, scale = 1) 
     b2 = 0.5
@@ -92,12 +96,29 @@ scaled_doX = function(doX, train){
   return(ret * 0.99 + 0.005)
 }
 
+# compare to Colr for tabular part
+n_obs=10000
+train = dgp(n_obs=n_obs, b_labels=1:n_obs )
+# Fitting Tram
+df = data.frame(train$df_orig$numpy())
+fit.orig = Colr(X2~X1,df)
+summary(fit.orig)  # sollte 0.5 sein, ist auch
 
-train = dgp(n_obs, 1:n_obs )
+df = data.frame(train$df_scaled$numpy())
+fit.orig = Colr(X2~X1,df)
+summary(fit.orig) # auch 0.47
+
+
+
+# end Colr
+
+
+train = dgp(n_obs=n_obs, b_labels=1:n_obs )
 #Bis jetzt alles CI
 #MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 #MA =  matrix(c(0, 'ls', 'ls', 0,0,'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 MA =  matrix(c(0, 'ls', 'ls', 0,0, 'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
+MA
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
 len_theta = 6
@@ -105,8 +126,13 @@ tabular_model = create_param_model(MA, hidden_features_I = hidden_features_I,
                                  len_theta = len_theta, 
                                  hidden_features_CS = hidden_features_CS)
 
+#summary(tabular_model)
 tabular_out = tabular_model$output
+tabular_out$shape
+# batch, no Variable, 1(CS) + 1(LS) + M
 
+# params pro Variable
+# first CS, second LS, third part BP-coeffs
 tabular_model(train$df_scaled)
 
 
@@ -131,123 +157,63 @@ dropout2 <- layer_dropout(rate = 0.5)(dense1)
 
 cnn_out <- layer_dense(units = 1, activation = 'linear')(dropout2)
 
+# get shape batches, #Variables, 
+# since image impacts only x3, the first 2 cols should be zero
 repeated_tensor <- layer_repeat_vector(n = 3)(cnn_out)
+tmp = k_reshape(k_constant(c(0,0,1)), shape=c(-1,3,1))
+cnn_tensor <- layer_multiply(repeated_tensor, tmp)
 
 # Reshape the tensor
-cnn_out2 <- layer_reshape(target_shape = c(3, 1))(repeated_tensor)
+cnn_out2 <- layer_reshape(target_shape = c(3, 1))(cnn_tensor)
 
-merged_output <- layer_concatenate(list(cnn_out2, tabular_out))
+merged_output <- layer_concatenate(list( tabular_out, cnn_out2))
+merged_output$shape
+# [batch, #variable, 1(CS) + 1(LS) + M(BP) + 1(CNN) ]
 
 # Define final model
-final_model <- keras_model(inputs = list(cnn_input, dnn_input), outputs = merged_output)
+final_model <- keras_model(inputs = list(tabular_model$input, cnn_input), 
+                           outputs = merged_output)
 
-Bis dahin sind wir gekommen
+#summary(final_model)
 
+h_params = final_model(list(train$df_scaled, train_images ))
+h_params$shape
+# [batch, #variable, 1(CS) + 1(LS) + M(BP) + 1(CNN) ]
 
-# Define the model
-cnn_model <- keras_model(inputs = cnn_input, outputs = output)
+# check that only third variable has an eta_B Shift (last h_params-dim)
+h_params[, ,9]
 
-# Compile the model
-cnn_model %>% compile(
-  loss = 'mean_squared_error',
-  optimizer = 'adam',
-  metrics = c('accuracy')
-)
-
-# Print model summary
-summary(cnn_model)
-
-
-
-
-
-x = tf$ones(shape = c(2L, 3L))
-param_model(1*x)
-MA
-h_params = param_model(train$df_scaled)
-# Check the derivatives of h w.r.t. x
-x <- tf$ones(shape = c(2L, 3L)) #B,P
-with(tf$GradientTape(persistent = TRUE) %as% tape, {
-  tape$watch(x)
-  y <- param_model(x)
-})
-# parameter (output) has shape B, P, k (num param)
-# derivation of param wrt to input x
-# input x has shape B, P
-# derivation d has shape B,P,k, B,P
-d <- tape$jacobian(y, x)
-d[1,,,2,] # only contains zero since independence of batches
-
-
-MA
-#      [,1] [,2] [,3]
-# [1,] "0"  "ls" "ci"
-# [2,] "0"  "0"  "cs"
-# [3,] "0"  "0"  "0" 
-# check which x_i is dependent on other x_j
-# k=1: cs, k=2:ls, rest of k: CI (len_theta params)
-# für k=1 sollte hur bei x2-->x3 ableitung !=0 sein: ok 
-# für k=2 sollte x1-->x2 abl !=0 sein: ok
-# für k=3...2+len_theta sollte sollte für x1-->x3 !=0 sein: ok
-for (k in 1:(2+len_theta)){ #k = 1
-  print(k) #B,P,k,B,P
-  B = 1 # first batch
-  print(d[B,,k,B,]) #
-}
 
 # loss before training
-struct_dag_loss(train$df_scaled, h_params)
-
-
-with(tf$GradientTape(persistent = TRUE) %as% tape, {
-  h_params = param_model(train$df_scaled)
-  loss = struct_dag_loss(train$df_scaled, h_params)
-})
-
-gradients = tape$gradient(loss, param_model$trainable_variables)
-gradients
-
-param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=len_theta, hidden_features_CS=hidden_features_CS)
-
-
-# ######### DEBUG TRAINING FROM HAND #######
-# # Define the optimizer
-# optimizer <- tf$optimizers$Adam(lr=0.01)
-# # Define the number of epochs for training
-# num_epochs <- 10
-# for (epoch in 1:num_epochs) {
-#   with(tf$GradientTape(persistent = TRUE) %as% tape, {
-#     # Compute the model's prediction - forward pass
-#     h_params <- param_model(train$df_scaled)
-#     loss <- struct_dag_loss(train$df_scaled, h_params)
-#   })
-#   # Compute gradients
-#   gradients <- tape$gradient(loss, param_model$trainable_variables)
-#   # Apply gradients to update the model parameters
-#   optimizer$apply_gradients(purrr::transpose(list(gradients, param_model$trainable_variables)))
-#   # Print the loss every epoch or more frequently if desired
-#   print(paste("Epoch", epoch, ", Loss:", loss$numpy()))
-# }
+# since images are in a source node we do not need to provide them
+semi_struct_dag_loss(train$df_scaled, h_params)
 
 
 optimizer = optimizer_adam()
-param_model$compile(optimizer, loss=struct_dag_loss)
-param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
+final_model$compile(optimizer, loss=semi_struct_dag_loss)
+#final_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
+final_model$evaluate(x = list(train$df_scaled, train_images), 
+                     y=train$df_scaled, batch_size = 7L)
 
 
 ##### Training ####
 if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
-  hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, 
-                         epochs = 5000L,verbose = TRUE)
-  param_model$save_weights(fn)
+  hist = final_model$fit(x = list(train$df_scaled, train_images), 
+                         y=train$df_scaled, 
+                         epochs = 5L,verbose = TRUE)
+  final_model$save_weights(fn)
   plot(hist$epoch, hist$history$loss)
 }
-param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
+
+
+
+# final_model$evaluate(x = list(train$df_scaled, train_images), 
+#                      y=train$df_scaled, batch_size = 7L)
 fn
 len_theta
-param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
+final_model$get_layer(name = "beta")$get_weights() * final_model$get_layer(name = "beta")$mask
 
 # Check the derivatives of h w.r.t. x
 x <- tf$ones(shape = c(10L, 3L)) #B,P

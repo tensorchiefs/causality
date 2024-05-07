@@ -48,7 +48,7 @@ dgp <- function(n_obs) {
     return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
 } 
 
-train = dgp(1000)
+train = dgp(2000)
 # Fitting Tram
 df = data.frame(train$df_orig$numpy())
 fit.orig = Colr(X2~X1,df)

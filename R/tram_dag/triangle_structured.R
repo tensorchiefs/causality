@@ -67,6 +67,8 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
 } 
 
+
+
 scaled_doX = function(doX, train){
   dat_tf = train$df_orig
   dat_min = tf$reduce_min(dat_tf, axis=0L)
@@ -75,6 +77,15 @@ scaled_doX = function(doX, train){
   return(ret * 0.99 + 0.005)
 }
 
+train = dgp(4000)
+# Fitting Tram
+df = data.frame(train$df_orig$numpy())
+fit.orig = Colr(X2~X1,df)
+summary(fit.orig)
+
+df = data.frame(train$df_scaled$numpy())
+fit.scaled = Colr(X2~X1,df)
+summary(fit.scaled)
 
 train = dgp(20000)
 #Bis jetzt alles CI

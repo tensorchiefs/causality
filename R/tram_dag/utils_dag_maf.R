@@ -361,6 +361,41 @@ dag_loss = function (t_i, theta_tilde){
   return (-tf$reduce_mean(log_lik))#(-tf$reduce_mean(log_lik, axis=-1L))
 }
 
+semi_struct_dag_loss = function (t_i, h_params){
+  h_params_tabular = h_params[,,1:(dim(h_params)[3]-1)]
+  h_params_image = h_params[,,dim(h_params)[3]]
+  
+  h_cs <- h_params_tabular[,,1, drop = FALSE]
+  h_ls <- h_params_tabular[,,2, drop = FALSE]
+  theta_tilde <- h_params_tabular[,,3:dim(h_params_tabular)[3], drop = FALSE]
+  
+  #CI 
+  theta = to_theta3(theta_tilde)
+  h_I = h_dag_extra(t_i, theta)  # batch, #Variables
+  #LS
+  h_LS = tf$squeeze(h_ls, axis=-1L)#tf$einsum('bx,bxx->bx', t_i, beta)
+  #CS
+  h_CS = tf$squeeze(h_cs, axis=-1L)  # batch, #Variables
+  
+  # CNN-eta(B)
+  h_eta_B = h_params_image  # batch, #Variables
+  
+  h = h_I + h_LS + h_CS + h_eta_B
+  
+  #Compute terms for change of variable formula
+  log_latent_density = -h - 2 * tf$math$softplus(-h) #log of logistic density at h
+  ## h' dh/dtarget is 0 for all shift terms
+  log_hdash = tf$math$log(tf$math$abs(h_dag_dash_extra(t_i, theta)))
+  
+  log_lik = log_latent_density + log_hdash
+  ### DEBUG 
+  #if (sum(is.infinite(log_lik$numpy())) > 0){
+  #  print("Hall")
+  #}
+  return (-tf$reduce_mean(log_lik))
+
+  }
+
 struct_dag_loss = function (t_i, h_params){
   # from the last dimension of h_params the first entriy is h_cs1
   # the second to |X|+1 are the LS
