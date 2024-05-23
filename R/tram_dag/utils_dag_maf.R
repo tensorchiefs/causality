@@ -463,7 +463,7 @@ sample_from_target_MAF = function(param_model, node, parents){
 }
 
 sample_from_target_MAF_struct = function(param_model, node, parents){
-  DEBUG_NO_EXTRA = FALSE
+  DEBUG_NO_EXTRA = FALSE #Takes for ages not really working
   h_params = param_model(parents)
   
   h_cs <- h_params[,,1, drop = FALSE]

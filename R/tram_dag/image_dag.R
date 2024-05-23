@@ -1,3 +1,4 @@
+reticulate::py_config()
 if (FALSE){
   ### Old Style Libraries### 
   library(keras)
@@ -15,7 +16,7 @@ if (FALSE){
   library(keras)
   library(tidyverse)
   source('R/tram_dag/utils_tf.R')
-  source('R/tram_dag/utils_tf.R') #Might be called twice (Oliver's Laptop)
+  #source('R/tram_dag/utils_tf.R') #Might be called twice (Oliver's Laptop)
   
   #### For TFP
   library(tfprobability)
@@ -24,6 +25,11 @@ if (FALSE){
 
 ############## Semi-structured DAG with image (Very Special to DAG in this file) ################
 semi_struct_dag_loss = function (t_i, h_params){
+  
+  k_min <- k_constant(global_min)
+  k_max <- k_constant(global_max)
+  
+  
   #### This function is used for the semi-structured model in which an image is included
   h_params_tabular = h_params[,,1:(dim(h_params)[3]-1)]
   h_params_image = h_params[,,dim(h_params)[3]]
@@ -32,9 +38,9 @@ semi_struct_dag_loss = function (t_i, h_params){
   h_ls <- h_params_tabular[,,2, drop = FALSE]
   theta_tilde <- h_params_tabular[,,3:dim(h_params_tabular)[3], drop = FALSE]
   
-  #CI 
+  #Intercept 
   theta = to_theta3(theta_tilde)
-  h_I = h_dag_extra(t_i, theta)  # batch, #Variables
+  h_I = h_dag_extra(t_i, theta, k_min, k_max)  # batch, #Variables
   #LS
   h_LS = tf$squeeze(h_ls, axis=-1L)#tf$einsum('bx,bxx->bx', t_i, beta)
   #CS
@@ -48,7 +54,7 @@ semi_struct_dag_loss = function (t_i, h_params){
   #Compute terms for change of variable formula
   log_latent_density = -h - 2 * tf$math$softplus(-h) #log of logistic density at h
   ## h' dh/dtarget is 0 for all shift terms
-  log_hdash = tf$math$log(tf$math$abs(h_dag_dash_extra(t_i, theta)))
+  log_hdash = tf$math$log(tf$math$abs(h_dag_dash_extra(t_i, theta, k_min, k_max)))
   
   log_lik = log_latent_density + log_hdash
   ### DEBUG 
@@ -58,9 +64,7 @@ semi_struct_dag_loss = function (t_i, h_params){
   return (-tf$reduce_mean(log_lik))
 }
 
-
-
-fn = 'image_dag.h5' 
+fn = 'image_dag_scaled.h5' 
 library(fields)
 
 ### Loading CIFAR10 data
@@ -101,57 +105,56 @@ par(mfrow = c(1, 1), mar = c(5, 4, 4, 2) + 0.1)
 ##### TEMP
 dgp <- function(n_obs, b_labels) {
   # TODO Fix how to create X1 depending on labels of images
-    #x1 = ifelse(b_labels <= 5, 0, 1) #Images <=5 are "female" the other "male"
-    x1 = sample(c(0,1),size=n_obs,replace = TRUE) 
+    x1 = ifelse(b_labels + runif(n_obs,-2,2) < 5, 0, 1) #Images <=5 are "female" the other "male"
+    #x1 = sample(c(0,1),size=n_obs,replace = TRUE) 
     ####### x2 
     u2 = rlogis(n_obs, location =  0, scale = 1) 
     b2 = 0.5
     #h_0(x2) = 0.42 * x2
     #u2 = h(x2 | x1) = h_0(x2) + b2 * x1 = 0.42 * x2 + 0.5 * x1
-    x2 = (u2 - 0.5*x1)/0.42
+    x2 = (u2 - b2*x1)/0.42
     
     ####### x3
     u3 = rlogis(n_obs, location =  0, scale = 1) 
-    a1 = 2
-    a2 = 3
-    #u3 = h(x3|x1,x2,B) = h_0(x3) + eta(B) + a1*x1 + a2*x2 
+    a1 = 0.2
+    a2 = 0.03
+    #u3 = h(x3|x1,x2,B) = 10*(h_0(x3) + eta(B) + a1*x1 + a2*x2)
     #h_0(x3) = 0.21 * x3 
-    etaB = 0.5 * b_labels
+    etaB = (b_labels - 4)
     x3 =  (u3 - etaB - a1*x1 - a2*x2)/0.21
     
+    #Orginal Data
     dat.s =  data.frame(x1 = x1, x2 = x2, x3 = x3)
     dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
-    scaled = scale_df(dat.tf) * 0.99 + 0.005
+    
     A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
-    return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
+    return(list(
+      df_orig=dat.tf,  
+      min =  tf$reduce_min(dat.tf, axis=0L),
+      max =  tf$reduce_max(dat.tf, axis=0L),
+    A=A))
 } 
 
-scaled_doX = function(doX, train){
-  dat_tf = train$df_orig
-  dat_min = tf$reduce_min(dat_tf, axis=0L)
-  dat_max = tf$reduce_max(dat_tf, axis=0L)
-  ret = (doX - dat_min) / (dat_max - dat_min)
-  return(ret * 0.99 + 0.005)
-}
 
 # compare to Colr for tabular part
-n_obs=10000
-train = dgp(n_obs=n_obs, b_labels=1:n_obs )
+n_obs=20000
+train = dgp(n_obs=n_obs, b_labels = train_labels[1:n_obs])
+global_min = train$min
+global_max = train$max
+
 # Fitting Tram
 df = data.frame(train$df_orig$numpy())
+pairs(df)
+
+
 fit.orig = Colr(X2~X1,df)
 summary(fit.orig)  # sollte 0.5 sein, ist auch
 
-df = data.frame(train$df_scaled$numpy())
-fit.orig = Colr(X2~X1,df)
-summary(fit.orig) # auch 0.47
-
-
+df$label = train_labels[1:n_obs] 
+fit.orig = Colr(X3~ X1 + X2 + label,df)
+summary(fit.orig) 
 
 # end Colr
-
-
-train = dgp(n_obs=n_obs, b_labels=1:n_obs )
 #Bis jetzt alles CI
 #MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 #MA =  matrix(c(0, 'ls', 'ls', 0,0,'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
@@ -171,7 +174,7 @@ tabular_out$shape
 
 # params pro Variable
 # first CS, second LS, third part BP-coeffs
-tabular_model(train$df_scaled)
+tabular_model(train$df_orig)
 
 
 ###### create a cnn model
@@ -200,9 +203,11 @@ cnn_out <- layer_dense(units = 1, activation = 'linear')(dropout2)
 repeated_tensor <- layer_repeat_vector(n = 3)(cnn_out)
 tmp = k_reshape(k_constant(c(0,0,1)), shape=c(-1,3,1))
 cnn_tensor <- layer_multiply(repeated_tensor, tmp)
-
 # Reshape the tensor
 cnn_out2 <- layer_reshape(target_shape = c(3, 1))(cnn_tensor)
+
+# 
+
 
 merged_output <- layer_concatenate(list( tabular_out, cnn_out2))
 merged_output$shape
@@ -214,7 +219,7 @@ final_model <- keras_model(inputs = list(tabular_model$input, cnn_input),
 
 #summary(final_model)
 
-h_params = final_model(list(train$df_scaled, train_images ))
+h_params = final_model(list(train$df_orig, train_images ))
 h_params$shape
 # [batch, #variable, 1(CS) + 1(LS) + M(BP) + 1(CNN) ]
 
@@ -224,25 +229,27 @@ h_params[, ,9]
 
 # loss before training
 # since images are in a source node we do not need to provide them
-semi_struct_dag_loss(train$df_scaled, h_params)
+semi_struct_dag_loss(train$df_orig, h_params)
 
 
 optimizer = optimizer_adam()
 final_model$compile(optimizer, loss=semi_struct_dag_loss)
 #final_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
-final_model$evaluate(x = list(train$df_scaled, train_images), 
-                     y=train$df_scaled, batch_size = 7L)
+final_model$evaluate(x = list(train$df_orig, train_images), y=train$df_orig, batch_size = 7L)
 
 
 ##### Training ####
 if (file.exists(fn)){
-  param_model$load_weights(fn)
+  final_model$load_weights(fn)
 } else {
-  hist = final_model$fit(x = list(train$df_scaled, train_images), 
-                         y=train$df_scaled, 
-                         epochs = 5L,verbose = TRUE)
+  hist = final_model$fit(x = list(train$df_orig, train_images), 
+                         y=train$df_orig, 
+                         epochs = 50L,verbose = TRUE)
   final_model$save_weights(fn)
   plot(hist$epoch, hist$history$loss)
+  #Save a pdf of the loss function containing fn using pdf()
+  pdf(paste0('loss_',fn,'.pdf'))
+  dev.off()
 }
 
 
@@ -252,7 +259,7 @@ if (file.exists(fn)){
 fn
 len_theta
 final_model$get_layer(name = "beta")$get_weights() * final_model$get_layer(name = "beta")$mask
-
+param_model = final_model
 # Check the derivatives of h w.r.t. x
 x <- tf$ones(shape = c(10L, 3L)) #B,P
 with(tf$GradientTape(persistent = TRUE) %as% tape, {

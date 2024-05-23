@@ -22,7 +22,7 @@ if (FALSE){
   source('R/tram_dag/utils_tfp.R')
 }
 
-fn = 'ls_sigmoid_long10k_M6.h5'
+fn = 'ls_sigmoid_long10k_M6_dumm.h5'
 
 ##### TEMP
 dgp <- function(n_obs) {
@@ -41,24 +41,39 @@ dgp <- function(n_obs) {
     #h_0(x_2) = 0.42 * x_2
     X_2 = 1/0.42 * (x_2_dash - 2 * X_1)
     #Sampling from 
-    dat.s =  data.frame(x1 = X_1, x2 = X_2)
-    dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
-    scaled = scale_df(dat.tf) * 0.99 + 0.005
+    dat =  data.frame(x1 = X_1, x2 = X_2)
+    dat.tf = tf$constant(as.matrix(dat), dtype = 'float32')
+    
+    ### Hack Attack using the scaled variables
+    if (FALSE){
+      dat.tf = dat.tf*c(10., 1.) #HACK ATTACK
+      dat.tf = scale_df(dat.tf) * 0.99 + 0.005
+    }
+    
     #A rows from, cols to (upper triangle)
     A <- matrix(c(0, 1, 0,0), nrow = 2, ncol = 2, byrow = TRUE)
-    return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
+    return(list(
+      df_orig=dat.tf,  
+      min =  tf$reduce_min(dat.tf, axis=0L),
+      max =  tf$reduce_max(dat.tf, axis=0L),
+      A=A))
 } 
 
 train = dgp(2000)
+(global_min = train$min)
+(global_max = train$max)
+
 # Fitting Tram
 df = data.frame(train$df_orig$numpy())
+plot(df)
+
+
+#### COLR ####
 fit.orig = Colr(X2~X1,df)
+confint(fit.orig)
+?Colr
 summary(fit.orig)
-
-df = data.frame(train$df_scaled$numpy())
-fit.scaled = Colr(X2~X1,df)
-summary(fit.scaled)
-
+logLik(fit.orig) / nrow(df)
 
 
 #Bis jetzt alles CI
@@ -103,11 +118,11 @@ for (k in 1:(2+len_theta)){ #k = 1
 }
 
 # loss before training
-h_params = param_model(train$df_scaled)
-struct_dag_loss(train$df_scaled, h_params)
+h_params = param_model(train$df_orig)
+struct_dag_loss(train$df_orig, h_params)
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
-  h_params = param_model(train$df_scaled)
-  loss = struct_dag_loss(train$df_scaled, h_params)
+  h_params = param_model(train$df_orig)
+  loss = struct_dag_loss(train$df_orig, h_params)
 })
 
 gradients = tape$gradient(loss, param_model$trainable_variables)
@@ -124,8 +139,8 @@ param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_th
 # for (epoch in 1:num_epochs) {
 #   with(tf$GradientTape(persistent = TRUE) %as% tape, {
 #     # Compute the model's prediction - forward pass
-#     h_params <- param_model(train$df_scaled)
-#     loss <- struct_dag_loss(train$df_scaled, h_params)
+#     h_params <- param_model(train$df_orig)
+#     loss <- struct_dag_loss(train$df_orig, h_params)
 #   })
 #   # Compute gradients
 #   gradients <- tape$gradient(loss, param_model$trainable_variables)
@@ -138,22 +153,25 @@ param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_th
 
 optimizer = optimizer_adam()
 param_model$compile(optimizer, loss=struct_dag_loss)
-param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
+param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
 
 
 ##### Training ####
 if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
-  hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, 
-                         epochs = 10000L,verbose = TRUE)
+  hist = param_model$fit(x = train$df_orig, y=train$df_orig, 
+                         epochs = 500L,verbose = TRUE)
   param_model$save_weights(fn)
-  plot(hist$epoch, hist$history$loss, xlim=c(6000, 10000), ylim=c(-1.22,-1.25))
+  plot(hist$epoch, hist$history$loss)
 }
-param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
+param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
 fn
 
 param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
+
+#### Checking Transformation Funktion #######
+
 
 # Check the derivatives of h w.r.t. x
 x <- tf$ones(shape = c(10L, 2L)) #B,P
@@ -173,7 +191,7 @@ plot(o[,1],o[,2])
 fit = lm(o[,2] ~ o[,1])
 confint(fit)
 
-d = train$df_scaled$numpy()
+d = train$df_orig$numpy()
 plot(d[,1],d[,2])
 fit = lm(d[,2] ~ d[,1])
 confint(fit)
@@ -185,10 +203,10 @@ for (i in 1:2){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
   hist(d, freq=FALSE, 20, xlim=c(0.1,1.1), main=paste0("X_",i))
-  lines(density(train$df_scaled$numpy()[,i]))
+  lines(density(train$df_orig$numpy()[,i]))
 }
 library(car)
-qqplot(s$numpy()[,2], train$df_scaled$numpy()[,2], xlim=c(0,1))
+qqplot(s$numpy()[,2], train$df_orig$numpy()[,2], xlim=c(0,1))
 abline(0,1)
 
 ########### Do(x1) seems to work#####
@@ -198,7 +216,7 @@ for (i in 1:3){
   d = d[d>0 & d<1]
   print(mean(d))
   hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
-  #lines(density(train$df_scaled$numpy()[,i]))
+  #lines(density(train$df_orig$numpy()[,i]))
 }
 
 s = do_dag_struct(param_model, train$A, doX=c(0.7, NA, NA))
@@ -207,7 +225,7 @@ for (i in 1:3){
   d = d[d>0 & d<1]
   print(mean(d))
   hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
-  #lines(density(train$df_scaled$numpy()[,i]))
+  #lines(density(train$df_orig$numpy()[,i]))
 }
 
 
@@ -218,7 +236,7 @@ for (i in 1:3){
   d = d[d>0 & d<1]
   print(mean(d))
   hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
-  #lines(density(train$df_scaled$numpy()[,i]))
+  #lines(density(train$df_orig$numpy()[,i]))
 }
 
 s = do_dag_struct(param_model, train$A, doX=c(NA, 0.7, NA))
@@ -227,7 +245,7 @@ for (i in 1:3){
   d = d[d>0 & d<1]
   print(mean(d))
   hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
-  #lines(density(train$df_scaled$numpy()[,i]))
+  #lines(density(train$df_orig$numpy()[,i]))
 }
 
 
@@ -241,7 +259,7 @@ for (i in 1:3){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
   hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
-  lines(density(train$df_scaled$numpy()[,i]))
+  lines(density(train$df_orig$numpy()[,i]))
 }
 mean(s_dox1_2$numpy()[,3])
 df = unscale(train$df_orig, s_dox1_2)
@@ -261,7 +279,7 @@ mean(df$numpy()[,3]) #0.63
 t.test(df$numpy()[,3])
 
 
-hist(train$df_scaled$numpy()[,1], freq=FALSE)
+hist(train$df_orig$numpy()[,1], freq=FALSE)
 
 if(FALSE){
   x = tf$ones(c(2L,3L)) * 0.5

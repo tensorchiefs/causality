@@ -1,7 +1,7 @@
-library(keras)
-library(tensorflow)
 if (FALSE){
   ### Old Style Libraries### 
+  library(keras)
+  library(tensorflow)
   source('R/tram_dag/utils_dag_maf.R') #Might be called twice
   source('R/tram_dag/utils_dag_maf.R') #Might be called twice
   source('R/tram_dag/utils.R')
@@ -15,70 +15,90 @@ if (FALSE){
   library(keras)
   library(tidyverse)
   source('R/tram_dag/utils_tf.R')
-  source('R/tram_dag/utils_tf.R') #Might be called twice (for oliver's mac)
+  source('R/tram_dag/utils_tf.R') #Might be called twice (Oliver's Laptop)
   
   #### For TFP
   library(tfprobability)
   source('R/tram_dag/utils_tfp.R')
 }
 
-fn = 'ls_sigmoid_long10k_M6.h5'
-
+fn = 'triangle_colr_3__No_Scaling_2.h5'
 ##### TEMP
-dgp <- function(n_obs) {
-    X_1 = rnorm(n_obs)
+dgp <- function(n_obs, doX=c(NA, NA, NA)) {
+    #n_obs = 1e5 n_obs = 10
+    #Sample X_1 from GMM with 2 components
+    if (is.na(doX[1])){
+      X_1_A = rnorm(n_obs, 0.25, 0.1)
+      X_1_B = rnorm(n_obs, 0.73, 0.05)
+      X_1 = ifelse(sample(1:2, replace = TRUE, size = n_obs) == 1, X_1_A, X_1_B)
+    } else{
+      X_1 = rep(doX[1], n_obs)
+    }
+    #hist(X_1)
     
     # Sampling according to colr
-    p = runif(n_obs)
-    x_2_dash = qlogis(p)
-    #Checking if x_2_dash is from logistic
-    #hist(x_2_dash, freq=FALSE,100)
-    #xx = seq(-5,5,0.1)
-    #lines(xx, dlogis(xx), col='red', lwd=2)
-    #checked
+    if (is.na(doX[2])){
+      U2 = runif(n_obs)
+      x_2_dash = qlogis(U2)
+      #x_2_dash = h_0(x_2) + beta * X_1
+      #x_2_dash = 0.42 * x_2 + 2 * X_1
+      X_2 = 1/0.42 * (x_2_dash - 2 * X_1)
+    } else{
+      X_2 = rep(doX[2], n_obs)
+    }
     
-    #x_2_dash = h_0(x_2) + beta * X_1
-    #h_0(x_2) = 0.42 * x_2
-    X_2 = 1/0.42 * (x_2_dash - 2 * X_1)
-    #Sampling from 
-    dat.s =  data.frame(x1 = X_1, x2 = X_2)
-    dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
-    scaled = scale_df(dat.tf) * 0.99 + 0.005
-    #A rows from, cols to (upper triangle)
-    A <- matrix(c(0, 1, 0,0), nrow = 2, ncol = 2, byrow = TRUE)
-    return(list(df_orig=dat.tf,  df_scaled = scaled, A=A))
+    #hist(X_2)
+    
+    # Sampling according to colr
+    if (is.na(doX[3])){
+      U3 = runif(n_obs)
+      x_3_dash = qlogis(U3)
+      #x_3_dash = h_0_3(x_3 + gamma_1 * X_1 + gamma_2 * X_2)
+      #x_3_dash = 0.63 * x_3 -0.2 * X_1 + 1.3 * X_2
+      X_3 = (x_3_dash + 0.2 * X_1 - 1.3 * X_2)/0.63
+    } else{
+      X_3 = rep(doX[3], n_obs)
+    }
+   
+    #hist(X_3)
+    A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
+    dat.orig =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3)
+    dat.tf = tf$constant(as.matrix(dat.orig), dtype = 'float32')
+    return(list(
+      df_orig=dat.tf,  
+      min =  tf$reduce_min(dat.tf, axis=0L),
+      max =  tf$reduce_max(dat.tf, axis=0L),
+      A=A))
 } 
 
-train = dgp(2000)
+train = dgp(4000)
+(global_min = train$min)
+(global_max = train$max)
 # Fitting Tram
 df = data.frame(train$df_orig$numpy())
 fit.orig = Colr(X2~X1,df)
 summary(fit.orig)
+confint(fit.orig) #Original 
+# Fitting Tram
+df = data.frame(train$df_orig$numpy())
+fit.orig = Colr(X3 ~ X2 + X1,df)
+summary(fit.orig)
+confint(fit.orig) #Original 
 
-df = data.frame(train$df_scaled$numpy())
-fit.scaled = Colr(X2~X1,df)
-summary(fit.scaled)
-
-
-
-#Bis jetzt alles CI
-#MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
-#MA =  matrix(c(0, 'ls', 'ls', 0,0,'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
-MA =  matrix(c(0, 'ls', 0,0), nrow = 2, ncol = 2, byrow = TRUE)
+MA =  matrix(c(0, 'ls', 'ls', 0,0, 'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
-len_theta = 10
+len_theta = 6
 param_model = create_param_model(MA, hidden_features_I = hidden_features_I, 
                                  len_theta = len_theta, 
                                  hidden_features_CS = hidden_features_CS)
 
-x = tf$ones(shape = c(3L, 2L))
-h_params_1 = param_model(1*x)
-h_params_1[1,1,] #First two should be 0
-h_params_1[1,2,] #First CS should be 0
+x = tf$ones(shape = c(2L, 3L))
+param_model(1*x)
 MA
+h_params = param_model(train$df_orig)
 # Check the derivatives of h w.r.t. x
-x <- tf$ones(shape = c(3L, 2L)) #B,P
+x <- tf$ones(shape = c(2L, 3L)) #B,P
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   tape$watch(x)
   y <- param_model(x)
@@ -92,10 +112,15 @@ d[1,,,2,] # only contains zero since independence of batches
 
 
 MA
-#     [,1] [,2]
-#[1,] "0"  "ls"
-#[2,] "0"  "0" 
-# Nur der zweite !=0 
+#      [,1] [,2] [,3]
+# [1,] "0"  "ls" "ci"
+# [2,] "0"  "0"  "cs"
+# [3,] "0"  "0"  "0" 
+# check which x_i is dependent on other x_j
+# k=1: cs, k=2:ls, rest of k: CI (len_theta params)
+# für k=1 sollte hur bei x2-->x3 ableitung !=0 sein: ok 
+# für k=2 sollte x1-->x2 abl !=0 sein: ok
+# für k=3...2+len_theta sollte sollte für x1-->x3 !=0 sein: ok
 for (k in 1:(2+len_theta)){ #k = 1
   print(k) #B,P,k,B,P
   B = 1 # first batch
@@ -103,17 +128,18 @@ for (k in 1:(2+len_theta)){ #k = 1
 }
 
 # loss before training
-h_params = param_model(train$df_scaled)
-struct_dag_loss(train$df_scaled, h_params)
+struct_dag_loss(train$df_orig, h_params)
+
+
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
-  h_params = param_model(train$df_scaled)
-  loss = struct_dag_loss(train$df_scaled, h_params)
+  h_params = param_model(train$df_orig)
+  loss = struct_dag_loss(train$df_orig, h_params)
 })
 
 gradients = tape$gradient(loss, param_model$trainable_variables)
 gradients
 
-param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=6, hidden_features_CS=hidden_features_CS)
+param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=len_theta, hidden_features_CS=hidden_features_CS)
 
 
 # ######### DEBUG TRAINING FROM HAND #######
@@ -138,25 +164,49 @@ param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_th
 
 optimizer = optimizer_adam()
 param_model$compile(optimizer, loss=struct_dag_loss)
-param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
+param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
 
 
 ##### Training ####
 if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
-  hist = param_model$fit(x = train$df_scaled, y=train$df_scaled, 
-                         epochs = 10000L,verbose = TRUE)
+  hist = param_model$fit(x = train$df_orig, y=train$df_orig, 
+                         epochs = 500L,verbose = TRUE)
   param_model$save_weights(fn)
-  plot(hist$epoch, hist$history$loss, xlim=c(6000, 10000), ylim=c(-1.22,-1.25))
+  plot(hist$epoch, hist$history$loss)
 }
-param_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
+param_model$evaluate(x = train$df_orig, y=train$df_scaled, batch_size = 7L)
 fn
-
+len_theta
 param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
 
+
+#### Checking the transformation ####
+h_params = param_model(train$df_orig)
+r = check_baselinetrafo(h_params)
+Xs = r$Xs
+h_I = r$h_I
+
+df = data.frame(train$df_orig$numpy())
+fit.21 = Colr(X2~X1,df)
+temp = model.frame(fit.21)[1:2,-1, drop=FALSE] #WTF!
+plot(fit.21, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
+     main='h_I(X2) Colr and Our Model', cex.main=0.8)
+lines(Xs[,2], h_I[,2], col='red', lty=2, lwd=5)
+rug(train$df_orig$numpy()[,2], col='blue')
+
+fit.312 = Colr(X3 ~ X1 + X2,df)
+temp = model.frame(fit.312)[1:2, -1, drop=FALSE] #WTF!
+
+plot(fit.312, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
+     main='h_I(X3) Colr and Our Model', cex.main=0.8)
+lines(Xs[,3], h_I[,3], col='red', lty=2, lwd=5)
+rug(train$df_orig$numpy()[,3], col='blue')
+
+
 # Check the derivatives of h w.r.t. x
-x <- tf$ones(shape = c(10L, 2L)) #B,P
+x <- tf$ones(shape = c(10L, 3L)) #B,P
 with(tf$GradientTape(persistent = TRUE) %as% tape, {
   tape$watch(x)
   y <- param_model(x)
@@ -170,29 +220,33 @@ for (k in 1:(2+len_theta)){ #k = 1
 
 o = train$df_orig$numpy()
 plot(o[,1],o[,2])
-fit = lm(o[,2] ~ o[,1])
-confint(fit)
-
-d = train$df_scaled$numpy()
-plot(d[,1],d[,2])
-fit = lm(d[,2] ~ d[,1])
-confint(fit)
-
+lm(o[,2] ~ o[,1])
 
 # Sampling fitted model w/o intervention --> OK 
-s = do_dag_struct(param_model, train$A, doX=c(NA, NA), num_samples = 5000)
-for (i in 1:2){
+s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 5000)
+for (i in 1:3){
   d = s[,i]$numpy()
-  d = d[d>0 & d<1]
-  hist(d, freq=FALSE, 20, xlim=c(0.1,1.1), main=paste0("X_",i))
-  lines(density(train$df_scaled$numpy()[,i]))
+  hist(d, freq=FALSE, 20,main=paste0("X_",i))
+  lines(density(train$df_orig$numpy()[,i]))
 }
-library(car)
-qqplot(s$numpy()[,2], train$df_scaled$numpy()[,2], xlim=c(0,1))
-abline(0,1)
+
+######### Simulation of do-interventions #####
+doX=c(0.5, NA, NA)
+dx5 = dgp(10000, doX=doX)
+dx5$df_orig$numpy()[1:5,]
+dx5$df_scaled$numpy()[1:5,]
+s_0.5 = scaled_doX(doX, train)[1]$numpy()
+
+
+doX=c(0.7, NA, NA)
+dx7 = dgp(10000, doX=doX)
+hist(dx5$df_orig$numpy()[,2], freq=FALSE,100)
+mean(dx7$df_orig$numpy()[,2]) - mean(dx5$df_orig$numpy()[,2])  
+mean(dx7$df_orig$numpy()[,3]) - mean(dx5$df_orig$numpy()[,3])  
+s_0.7 = scaled_doX(doX, train)[1]$numpy()
 
 ########### Do(x1) seems to work#####
-s = do_dag_struct(param_model, train$A, doX=c(0.5, NA, NA))
+s = do_dag_struct(param_model, train$A, doX=c(s_0.5, NA, NA))
 for (i in 1:3){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
@@ -200,16 +254,33 @@ for (i in 1:3){
   hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
   #lines(density(train$df_scaled$numpy()[,i]))
 }
+sdown = unscale(train$df_orig, s)
+hist(sdown$numpy()[,3], freq=FALSE)
+median(sdown$numpy()[,3])
 
-s = do_dag_struct(param_model, train$A, doX=c(0.7, NA, NA))
+s = do_dag_struct(param_model, train$A, doX=c(s_0.7, NA, NA))
 for (i in 1:3){
   d = s[,i]$numpy()
   d = d[d>0 & d<1]
   print(mean(d))
-  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
+  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.7) X_",i))
   #lines(density(train$df_scaled$numpy()[,i]))
 }
+sup = unscale(train$df_orig, s)
+hist(sup$numpy()[,3], freq=FALSE)
+mean(sup$numpy()[,3])
 
+mean(sup$numpy()[,2]) - mean(sdown$numpy()[,2])
+mean(sup$numpy()[,3]) - mean(sdown$numpy()[,3])
+
+median(sup$numpy()[,2]) - median(sdown$numpy()[,2])
+median(sup$numpy()[,3]) - median(sdown$numpy()[,3])
+
+
+####################################################################################
+################ Below not tested after refactoring to new DGPs (Using Tranformation models in DGP) 
+############################
+####################################################################################
 
 ########### Do(x2) seem to work #####
 s = do_dag_struct(param_model, train$A, doX=c(NA, 0.5, NA))
@@ -231,9 +302,7 @@ for (i in 1:3){
 }
 
 
-
 ########### TODO Check the sampling (prob needs ad) #####
-
 dox1_2=scale_value(train$df_orig, col=1L, 2) #On X2
 s_dox1_2 = do_dag(param_model, train$A, doX=c(dox1_2$numpy(), NA, NA), num_samples = 5000)
 s = s_dox1_2

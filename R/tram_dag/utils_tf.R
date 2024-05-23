@@ -828,6 +828,28 @@ create_masks <- function(adjacency, hidden_features=c(64, 64)) {
 }
 
 ########## Transformations ############
+check_baselinetrafo = function(h_params){
+  #h_params = param_model(train$df_orig)
+  k_min <- k_constant(global_min)
+  k_max <- k_constant(global_max)
+  
+  k_min.df <- k_min$numpy()
+  k_max.df <- k_max$numpy()
+  
+  theta_tilde <- h_params[,,3:dim(h_params)[3], drop = FALSE]
+  theta = to_theta3(theta_tilde)
+  length.out  = nrow(theta_tilde)
+  X = matrix(NA, nrow=length.out, ncol=length(k_min))
+  for(i in 1:length(k_min.df)){
+    X[,i] = seq(k_min.df[i], k_max.df[i], length.out = length.out)
+  }
+  t_i = k_constant(X)
+  
+  h_I = h_dag_extra(t_i, theta, k_min, k_max) 
+  return(list(h_I = h_I$numpy(), Xs=X))
+} 
+
+
 
 sample_standard_logistic <- function(shape, epsilon=1e-7) {
   uniform_samples <- tf$random$uniform(shape, minval=0, maxval=1)
@@ -853,8 +875,9 @@ h_dag_dash = function(t_i, theta){
 }
 
 
-h_dag_extra = function(t_i, theta){
+h_dag_extra = function(t_i, theta, k_min, k_max){
   DEBUG = FALSE
+  t_i = (t_i - k_min)/(k_max - k_min) # Scaling
   t_i3 = tf$expand_dims(t_i, axis=-1L)
   # for t_i < 0 extrapolate with tangent at h(0)
   b0 <- tf$expand_dims(h_dag(L_START, theta),axis=-1L)
@@ -880,6 +903,9 @@ h_dag_extra = function(t_i, theta){
 }
 
 h_dag_extra_struc = function(t_i, theta, shift){
+  #Throw unsupported error
+  stop('Please check before removing')
+  
   DEBUG = FALSE
   if (length(t_i$shape) == 2) {
     t_i3 = tf$expand_dims(t_i, axis=-1L)
@@ -907,18 +933,24 @@ h_dag_extra_struc = function(t_i, theta, shift){
   return(tf$squeeze(h))
 }
 
-h_dag_dash_extra = function(t_i, theta){
+h_dag_dash_extra = function(t_i, theta, k_min, k_max){
+  t_i = (t_i - k_min)/(k_max - k_min) # Scaling
   t_i3 = tf$expand_dims(t_i, axis=-1L)
+  
+  #Left extrapolation
   slope0 <- tf$expand_dims(h_dag_dash(L_START, theta), axis=-1L) 
   mask0 <- tf$math$less(t_i3, L_START)
   h_dash <- tf$where(mask0, slope0, t_i3)
   
+  #Right extrapolation
   slope1 <-  tf$expand_dims(h_dag_dash(R_START, theta), axis=-1L)
   mask1 <- tf$math$greater(t_i3, R_START)
   h_dash <- tf$where(mask1, slope1, h_dash)
   
+  #Interpolation
   mask <- tf$math$logical_and(tf$math$greater_equal(t_i3, L_START), tf$math$less_equal(t_i3, R_START))
   h_dash <- tf$where(mask, tf$expand_dims(h_dag_dash(t_i,theta),axis=-1L), h_dash)
+  
   return (tf$squeeze(h_dash))
 }
 
@@ -935,6 +967,42 @@ dag_loss = function (t_i, theta_tilde){
 }
 
 struct_dag_loss = function (t_i, h_params){
+  #t_i = train$df_orig
+  k_min <- k_constant(global_min)
+  k_max <- k_constant(global_max)
+  
+  # from the last dimension of h_params the first entriy is h_cs1
+  # the second to |X|+1 are the LS
+  # the 2+|X|+1 to the end is H_I
+  h_cs <- h_params[,,1, drop = FALSE]
+  h_ls <- h_params[,,2, drop = FALSE]
+  theta_tilde <- h_params[,,3:dim(h_params)[3], drop = FALSE]
+  #CI 
+  theta = to_theta3(theta_tilde)
+  h_I = h_dag_extra(t_i, theta, k_min, k_max) 
+  #LS
+  h_LS = tf$squeeze(h_ls, axis=-1L)#tf$einsum('bx,bxx->bx', t_i, beta)
+  #CS
+  h_CS = tf$squeeze(h_cs, axis=-1L)
+  
+  h = h_I + h_LS + h_CS
+  
+  #Compute terms for change of variable formula
+  log_latent_density = -h - 2 * tf$math$softplus(-h) #log of logistic density at h
+  ## h' dh/dtarget is 0 for all shift terms
+  log_hdash = tf$math$log(tf$math$abs(h_dag_dash_extra(t_i, theta, k_min, k_max))) - 
+    tf$math$log(k_max - k_min)  #Chain rule! See Hathorn page 12 
+  
+  log_lik = log_latent_density + log_hdash
+  ### DEBUG 
+  #if (sum(is.infinite(log_lik$numpy())) > 0){
+  #  print("Hall")
+  #}
+  return (-tf$reduce_mean(log_lik))
+}
+
+# Old version of the struct_dag_loss used until 21 May 24 with Scalar Data
+struct_dag_loss_OLD = function (t_i, h_params){
   # from the last dimension of h_params the first entriy is h_cs1
   # the second to |X|+1 are the LS
   # the 2+|X|+1 to the end is H_I
