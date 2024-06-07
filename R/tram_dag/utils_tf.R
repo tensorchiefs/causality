@@ -902,14 +902,17 @@ h_dag_extra = function(t_i, theta, k_min, k_max){
   return(tf$squeeze(h))
 }
 
-h_dag_extra_struc = function(t_i, theta, shift){
+h_dag_extra_struc = function(t_i, theta, shift, k_min, k_max){
   #Throw unsupported error
-  stop('Please check before removing')
-  
   DEBUG = FALSE
-  if (length(t_i$shape) == 2) {
-    t_i3 = tf$expand_dims(t_i, axis=-1L)
-  } 
+  #stop('Please check before removing')
+  #k_min <- k_constant(global_min)
+  #k_max <- k_constant(global_max)
+  t_i = (t_i - k_min)/(k_max - k_min) # Scaling
+  t_i3 = tf$expand_dims(t_i, axis=-1L)
+  # if (length(t_i$shape) == 2) {
+  #   t_i3 = tf$expand_dims(t_i, axis=-1L)
+  # } 
   # for t_i < 0 extrapolate with tangent at h(0)
   b0 <- tf$expand_dims(h_dag(L_START, theta) + shift,axis=-1L)
   slope0 <- tf$expand_dims(h_dag_dash(L_START, theta), axis=-1L) 

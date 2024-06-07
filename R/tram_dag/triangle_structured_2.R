@@ -22,7 +22,7 @@ if (FALSE){
   source('R/tram_dag/utils_tfp.R')
 }
 
-fn = 'triangle_colr_3__No_Scaling_2.h5'
+fn = 'triangle_colr_No_Scaling_2_M20.h5'
 ##### TEMP
 dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     #n_obs = 1e5 n_obs = 10
@@ -53,7 +53,7 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     if (is.na(doX[3])){
       U3 = runif(n_obs)
       x_3_dash = qlogis(U3)
-      #x_3_dash = h_0_3(x_3 + gamma_1 * X_1 + gamma_2 * X_2)
+      #x_3_dash = h_0_3(x_3) + gamma_1 * X_1 + gamma_2 * X_2
       #x_3_dash = 0.63 * x_3 -0.2 * X_1 + 1.3 * X_2
       X_3 = (x_3_dash + 0.2 * X_1 - 1.3 * X_2)/0.63
     } else{
@@ -64,31 +64,47 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
     dat.orig =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3)
     dat.tf = tf$constant(as.matrix(dat.orig), dtype = 'float32')
+    
+    q1 = quantile(dat.orig[,1], probs = c(0.05, 0.95)) 
+    q2 = quantile(dat.orig[,2], probs = c(0.05, 0.95))
+    q3 = quantile(dat.orig[,3], probs = c(0.05, 0.95))
+    
     return(list(
       df_orig=dat.tf,  
-      min =  tf$reduce_min(dat.tf, axis=0L),
-      max =  tf$reduce_max(dat.tf, axis=0L),
+      #min =  tf$reduce_min(dat.tf, axis=0L),
+      #max =  tf$reduce_max(dat.tf, axis=0L),
+      min = tf$constant(c(q1[1], q2[1], q3[1]), dtype = 'float32'),
+      max = tf$constant(c(q1[2], q2[2], q3[2]), dtype = 'float32'),
       A=A))
 } 
 
 train = dgp(4000)
 (global_min = train$min)
 (global_max = train$max)
-# Fitting Tram
+
+
+#### Fitting Tram ######
 df = data.frame(train$df_orig$numpy())
 fit.orig = Colr(X2~X1,df)
+dd = predict(fit.orig, newdata = data.frame(X1 = 0.5), type = 'density')
+x2s = as.numeric(rownames(dd))
+plot(x2s, dd, type = 'l', col='red')
+
+?predict.tram
 summary(fit.orig)
 confint(fit.orig) #Original 
 # Fitting Tram
 df = data.frame(train$df_orig$numpy())
-fit.orig = Colr(X3 ~ X2 + X1,df)
+fit.orig = Colr(X3 ~ X1 + X2,df)
 summary(fit.orig)
 confint(fit.orig) #Original 
+
+
 
 MA =  matrix(c(0, 'ls', 'ls', 0,0, 'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
-len_theta = 6
+len_theta = 20
 param_model = create_param_model(MA, hidden_features_I = hidden_features_I, 
                                  len_theta = len_theta, 
                                  hidden_features_CS = hidden_features_CS)
@@ -172,9 +188,10 @@ if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
   hist = param_model$fit(x = train$df_orig, y=train$df_orig, 
-                         epochs = 500L,verbose = TRUE)
+                         epochs = 2000L,verbose = TRUE)
   param_model$save_weights(fn)
   plot(hist$epoch, hist$history$loss)
+  plot(hist$epoch, hist$history$loss, ylim=c(1.5, 1.7))
 }
 param_model$evaluate(x = train$df_orig, y=train$df_scaled, batch_size = 7L)
 fn
@@ -187,6 +204,15 @@ h_params = param_model(train$df_orig)
 r = check_baselinetrafo(h_params)
 Xs = r$Xs
 h_I = r$h_I
+
+
+##### X1
+fit.1 = Colr(X1~1,df)
+plot(fit.1, which = 'baseline only')
+lines(Xs[,1], h_I[,1], col='red', lty=2, lwd=3)
+rug(train$df_orig$numpy()[,1], col='blue')
+transformed_values <- predict(fit.1, newdata = seq(0, 1, 0.01))
+
 
 df = data.frame(train$df_orig$numpy())
 fit.21 = Colr(X2~X1,df)
@@ -222,56 +248,89 @@ o = train$df_orig$numpy()
 plot(o[,1],o[,2])
 lm(o[,2] ~ o[,1])
 
-# Sampling fitted model w/o intervention --> OK 
+##### Checking observational distribution ####
 s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 5000)
+par(mfrow=c(1,3))
 for (i in 1:3){
   d = s[,i]$numpy()
-  hist(d, freq=FALSE, 20,main=paste0("X_",i))
+  hist(d, freq=FALSE, 100,main=paste0("X_",i))
+  #hist(train$df_orig$numpy()[,i], freq=FALSE, 100,main=paste0("X_",i))
   lines(density(train$df_orig$numpy()[,i]))
 }
+par(mfrow=c(1,1))
 
 ######### Simulation of do-interventions #####
-doX=c(0.5, NA, NA)
-dx5 = dgp(10000, doX=doX)
-dx5$df_orig$numpy()[1:5,]
-dx5$df_scaled$numpy()[1:5,]
-s_0.5 = scaled_doX(doX, train)[1]$numpy()
-
+doX=c(0.2, NA, NA)
+dx0.2 = dgp(10000, doX=doX)
+dx0.2$df_orig$numpy()[1:5,]
 
 doX=c(0.7, NA, NA)
 dx7 = dgp(10000, doX=doX)
-hist(dx5$df_orig$numpy()[,2], freq=FALSE,100)
-mean(dx7$df_orig$numpy()[,2]) - mean(dx5$df_orig$numpy()[,2])  
-mean(dx7$df_orig$numpy()[,3]) - mean(dx5$df_orig$numpy()[,3])  
-s_0.7 = scaled_doX(doX, train)[1]$numpy()
+hist(dx0.2$df_orig$numpy()[,2], freq=FALSE,100)
+mean(dx7$df_orig$numpy()[,2]) - mean(dx0.2$df_orig$numpy()[,2])  
+mean(dx7$df_orig$numpy()[,3]) - mean(dx0.2$df_orig$numpy()[,3])  
 
 ########### Do(x1) seems to work#####
-s = do_dag_struct(param_model, train$A, doX=c(s_0.5, NA, NA))
+
+#### Check intervention distribution after do(X1=0.2)
+df = data.frame(train$df_orig$numpy())
+fit.x2 = Colr(X2~X1,df)
+x2_dense = predict(fit.x2, newdata = data.frame(X1 = 0.2), type = 'density')
+x2s = as.numeric(rownames(x2_dense))
+
+## samples from x2 under do(x1=0.2) via simulate
+ddd = as.numeric(unlist(simulate(fit.x2, newdata = data.frame(X1 = 0.2), nsim = 1000)))
+s2_colr = rep(NA, length(ddd))
+for (i in 1:length(ddd)){
+  s2_colr[i] = as.numeric(ddd[[i]]) #<--TODO somethimes 
+}
+
+if(sum(is.na(s2_colr)) > 0){
+  stop("Pechgehabt mit Colr, viel Glück und nochmals!")
+}
+
+hist(s2_colr, freq=FALSE, 100, main='Do(X1=0.2) X2')
+lines(x2s, x2_dense, type = 'l', col='red')
+
+fit.x3 = Colr(X3 ~ X1 + X2,df)
+newdata = data.frame(
+    X1 = rep(0.2, length(s2_colr)), 
+    X2 = s2_colr)
+
+s3_colr = rep(NA, nrow(newdata))
+for (i in 1:nrow(newdata)){
+  # i = 2
+  s3_colr[i] = simulate(fit.x3, newdata = newdata[i,], nsim = 1)
+}
+
+s_dag = do_dag_struct(param_model, train$A, doX=c(0.2, NA, NA))
+par(mfrow=c(1,2))
+for (i in 2:3){
+  d = s_dag[,i]$numpy()
+  ds = dx0.2$df_orig$numpy()[,i]
+  print(paste0('sim mean ',mean(ds), '  med',median(ds)))
+  print(paste0('DAG mean ',mean(d), '  med',median(d)))
+  hist(d, freq=FALSE, 50, main=paste0("green=We, red=Colr, hist DGP Do(X1=0.2) X_",i))
+  lines(density(ds), col='green', lw=2)
+  if (i ==2) lines(density(s2_colr), type = 'l', col='red')
+  if (i ==3) lines(density(s3_colr), col='red')
+}
+par(mfrow=c(1,1))
+
+
+
+s7 = do_dag_struct(param_model, train$A, doX=c(0.7, NA, NA))
 for (i in 1:3){
-  d = s[,i]$numpy()
-  d = d[d>0 & d<1]
-  print(mean(d))
-  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.5) X_",i))
+  d = s7[,i]$numpy()
+  ds = dx7$df_orig$numpy()[,i]
+  print(paste0('sim mean ',mean(ds), '  med',median(ds)))
+  print(paste0('DAG mean ',mean(d), '  med',median(d)))
+  hist(d, freq=FALSE, 50, main=paste0("Do(X1=0.7) X_",i))
   #lines(density(train$df_scaled$numpy()[,i]))
 }
-sdown = unscale(train$df_orig, s)
-hist(sdown$numpy()[,3], freq=FALSE)
-median(sdown$numpy()[,3])
 
-s = do_dag_struct(param_model, train$A, doX=c(s_0.7, NA, NA))
-for (i in 1:3){
-  d = s[,i]$numpy()
-  d = d[d>0 & d<1]
-  print(mean(d))
-  hist(d, freq=FALSE, 50, xlim=c(0.1,1.1), main=paste0("Do (X3=0.7) X_",i))
-  #lines(density(train$df_scaled$numpy()[,i]))
-}
-sup = unscale(train$df_orig, s)
-hist(sup$numpy()[,3], freq=FALSE)
-mean(sup$numpy()[,3])
-
-mean(sup$numpy()[,2]) - mean(sdown$numpy()[,2])
-mean(sup$numpy()[,3]) - mean(sdown$numpy()[,3])
+mean(s7$numpy()[,2]) - mean(s$numpy()[,2])
+mean(s7$numpy()[,3]) - mean(s$numpy()[,3])
 
 median(sup$numpy()[,2]) - median(sdown$numpy()[,2])
 median(sup$numpy()[,3]) - median(sdown$numpy()[,3])

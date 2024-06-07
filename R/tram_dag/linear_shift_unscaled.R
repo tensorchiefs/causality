@@ -22,7 +22,7 @@ if (FALSE){
   source('R/tram_dag/utils_tfp.R')
 }
 
-fn = 'ls_sigmoid_long10k_M6_dumm.h5'
+fn = 'CI_scaled.h5'
 
 ##### TEMP
 dgp <- function(n_obs) {
@@ -52,10 +52,17 @@ dgp <- function(n_obs) {
     
     #A rows from, cols to (upper triangle)
     A <- matrix(c(0, 1, 0,0), nrow = 2, ncol = 2, byrow = TRUE)
+    
+    #Using quantiles to determine the scaling
+    q1 = quantile(dat[,1], probs = c(0.05, 0.95)) 
+    q2 = quantile(dat[,2], probs = c(0.05, 0.95))
+    
     return(list(
       df_orig=dat.tf,  
-      min =  tf$reduce_min(dat.tf, axis=0L),
-      max =  tf$reduce_max(dat.tf, axis=0L),
+      #min =  tf$reduce_min(dat.tf, axis=0L),
+      #max =  tf$reduce_max(dat.tf, axis=0L),
+      min = tf$constant(c(q1[1], q2[1]), dtype = 'float32'),
+      max = tf$constant(c(q1[2], q2[2]), dtype = 'float32'),
       A=A))
 } 
 
@@ -71,15 +78,22 @@ plot(df)
 #### COLR ####
 fit.orig = Colr(X2~X1,df)
 confint(fit.orig)
-?Colr
 summary(fit.orig)
+
 logLik(fit.orig) / nrow(df)
+fit.1 = Colr(X1~1,df)
+plot(fit.1, which = 'baseline only')
+rug(train$df_orig$numpy()[,1], col='blue')
 
 
 #Bis jetzt alles CI
 #MA =  matrix(c(0, 'ls', 'ci', 0,0,'cs',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 #MA =  matrix(c(0, 'ls', 'ls', 0,0,'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
 MA =  matrix(c(0, 'ls', 0,0), nrow = 2, ncol = 2, byrow = TRUE)
+
+##### Hack Attack
+MA =  matrix(c(0, 'ci', 0,0), nrow = 2, ncol = 2, byrow = TRUE)
+
 hidden_features_I = c(2,2)
 hidden_features_CS = c(2,2)
 len_theta = 10
@@ -161,12 +175,15 @@ if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
   hist = param_model$fit(x = train$df_orig, y=train$df_orig, 
-                         epochs = 500L,verbose = TRUE)
+                         epochs = 5000L,verbose = TRUE)
   param_model$save_weights(fn)
   plot(hist$epoch, hist$history$loss)
 }
 param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
 fn
+
+h_params = param_model(train$df_orig)
+h_params[1:2,,]
 
 param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
 
@@ -198,11 +215,12 @@ confint(fit)
 
 
 # Sampling fitted model w/o intervention --> OK 
-s = do_dag_struct(param_model, train$A, doX=c(NA, NA), num_samples = 5000)
+s = do_dag_struct(param_model, train$A, doX=c(NA, NA), num_samples = 15000)
 for (i in 1:2){
   d = s[,i]$numpy()
-  d = d[d>0 & d<1]
-  hist(d, freq=FALSE, 20, xlim=c(0.1,1.1), main=paste0("X_",i))
+  #d = d[d>0 & d<1]
+  hist(d, freq=FALSE, 100, main=paste0("X_",i))
+  #hist(train$df_orig$numpy()[,i], freq=FALSE, 100,  col='red',main=paste0("X_",i))
   lines(density(train$df_orig$numpy()[,i]))
 }
 library(car)

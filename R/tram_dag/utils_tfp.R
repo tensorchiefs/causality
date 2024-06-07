@@ -131,7 +131,9 @@ sample_from_target_MAF = function(param_model, node, parents){
   #object_fkt(t_i)
   #shape = tf$shape(parents)[1]
   #target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = -1E5*tf$ones(c(shape,1L)), high = 1E5*tf$ones(c(shape,1L)))$estimated_root
-  target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = h_0, high = h_1)$estimated_root
+  #TODO Achtung einfach high und low argumente weggelassen ohne testing
+  target_sample = tfp$math$find_root_chandrupatla(object_fkt)$estimated_root
+  #target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = h_0, high = h_1)$estimated_root
   
   # Manuly calculating the inverse for the extrapolated samples
   ## smaller than h_0
@@ -173,18 +175,26 @@ sample_from_target_MAF_struct = function(param_model, node, parents){
   } else { #The normal case allowing extrapolations
     latent_sample = sample_standard_logistic(parents$shape)
   }
+  #ddd = target_sample$numpy() #hist(ddd[,1],100)
+  k_min <- k_constant(global_min)
+  k_max <- k_constant(global_max)
   
   #t_i = tf$ones_like(h_LS) *0.5
   #h_dag_extra_struc(t_i, theta, shift = h_LS + h_CS)
   #h_dag_extra(t_i, theta)
-  
+  # h_dag_extra_struc(target_sample, theta, shift, k_min, k_max) - latent_sample
   object_fkt = function(t_i){
-    return(h_dag_extra_struc(t_i, theta, shift = h_LS + h_CS) - latent_sample)
+    return(h_dag_extra_struc(t_i, theta, shift = h_LS + h_CS, k_min, k_max) - latent_sample)
   }
   #object_fkt(t_i)
   #shape = tf$shape(parents)[1]
   #target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = -1E5*tf$ones(c(shape,1L)), high = 1E5*tf$ones(c(shape,1L)))$estimated_root
-  target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = h_0, high = h_1)$estimated_root
+  #TODO better checking
+  target_sample = tfp$math$find_root_chandrupatla(object_fkt)$estimated_root
+  #target_sample = tfp$math$find_root_chandrupatla(object_fkt, low = -10000., high = 10000.)$estimated_root
+  #wtfness = object_fkt(target_sample)$numpy()
+  #summary(wtfness)
+  
   
   # Manuly calculating the inverse for the extrapolated samples
   ## smaller than h_0
@@ -193,13 +203,19 @@ sample_from_target_MAF_struct = function(param_model, node, parents){
   #cat(paste0('~~~ sample_from_target  Fraction of extrapolated samples < 0 : %f \n', tf$reduce_mean(tf$cast(mask, tf$float32))))
   #tf$where(mask, beta_dist_h$prob(y_i)* theta_im, h)
   slope0 <- h_dag_dash(L_START, theta)#tf$expand_dims(h_dag_dash(L_START, theta), axis=-1L)
-  target_sample = tf$where(mask, (l-h_0)/slope0, target_sample)
+ 
+  target_sample = tf$where(mask,
+                          ((l-h_0)/slope0)*(k_max - k_min) + k_min
+                          ,target_sample)
   
   ## larger than h_1
   mask <- tf$math$greater_equal(l, h_1)
   #tf$where(mask, beta_dist_h$prob(y_i)* theta_im, h)
   slope1<- h_dag_dash(R_START, theta)
-  target_sample = tf$where(mask, (l-h_1)/slope1 + 1.0, target_sample)
+  
+  target_sample = tf$where(mask,
+                          (((l-h_1)/slope1) + 1.0)*(k_max - k_min) + k_min,
+                          target_sample)
   cat(paste0('sample_from_target Fraction of extrapolated samples > 1 : %f \n', tf$reduce_mean(tf$cast(mask, tf$float32))))
   return(target_sample[,node, drop=FALSE])
 }
