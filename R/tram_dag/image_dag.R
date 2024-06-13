@@ -64,7 +64,9 @@ semi_struct_dag_loss = function (t_i, h_params){
   return (-tf$reduce_mean(log_lik))
 }
 
-fn = 'image_dag_scaled.h5' 
+#fn = 'image_dag_etaBNot0.h5' 
+#fn = 'image_dag_etaB0.h5' 
+fn = 'image_dag_etaBsqrt_warmstart.h5' 
 library(fields)
 
 ### Loading CIFAR10 data
@@ -73,65 +75,93 @@ my_images <- dataset_mnist()
 
 ## Getting Training data
 n_obs = 20000
-train_images <- my_images$train$x[1:n_obs,,]
-dim(train_images)
+train_images <- my_images$train$x[1:n_obs,,] / 255.
 train_labels <- my_images$train$y[1:n_obs]
+dim(train_images)
 
-# plot_images <- function(img_array, main_label) {
-#   # Convert the image data to a format suitable for rasterImage (adjust dimensions)
-#   # Normalize the pixel values to [0, 1]
-#   img_array <- img_array / 255
-#   # Prepare plotting area and plot the image
-#   plot(0:1, 0:1, type = "n", xlab = "", ylab = "", main = main_label, axes = FALSE)
-#   rasterImage(img_array, 0, 0, 1, 1)
-# }
-# 
-# # Setting up the plot area
-# par(mfrow = c(2, 5), mar = c(1, 1, 2, 1))
-# 
-# # Loop through the first 10 images
-# for (i in 1:10) {
-#   # Reshape each image (keeping the color channel as the last dimension)
-#   img <- train_images[i,,,]
-#   # Determine label
-#   label <- train_labels[i, 1] + 1 # Adjusting label index for 0-based indexing in R
-#   # Plot the image
-#   plot_cifar(img, main_label = paste("Label:", label))
-# }
 
+if (FALSE){
+  ###### Hack Attack replace the images with the first image of the label
+  idx = rep(NA, 10)
+  for (i in 1:10){
+    idx[i] = which(train_labels == i-1)[1]
+  }
+  train_labels[idx] #0 1 2 3 4 5 6 7 8 9
+  # Get the index of the image in which the label the first time appreas
+  for (i in 1:n_obs){
+    #i = 1000
+    id = idx[train_labels[i] + 1]
+    train_images[i,,] = train_images[id,,] 
+  }
+}
+
+
+
+plot_images <- function(img_array, main_label) {
+  # Convert the image data to a format suitable for rasterImage (adjust dimensions)
+  # Normalize the pixel values to [0, 1]
+  img_array <- img_array 
+  # Prepare plotting area and plot the image
+  plot(0:1, 0:1, type = "n", xlab = "", ylab = "", main = main_label, axes = FALSE)
+  rasterImage(img_array, 0, 0, 1, 1)
+}
+
+# Setting up the plot area
+par(mfrow = c(2, 5), mar = c(1, 1, 2, 1))
+# Loop through the first 10 images
+for (i in c(1:120)) {
+  #i=100
+  print(i)
+  # Reshape each image (keeping the color channel as the last dimension)
+  img <- train_images[i,,] 
+  # Determine label
+  label <- train_labels[i] 
+  # Plot the image
+  plot_images(img, main_label = paste("Label:", label))
+}
 # Reset par to default
 par(mfrow = c(1, 1), mar = c(5, 4, 4, 2) + 0.1)
 
 ##### TEMP
 dgp <- function(n_obs, b_labels) {
-  # TODO Fix how to create X1 depending on labels of images
-    x1 = ifelse(b_labels + runif(n_obs,-2,2) < 5, 0, 1) #Images <=5 are "female" the other "male"
+    scale_effect_size = 10.
+    
+    # Create X1 depending on labels of images 
+    # Images <=5 are "female" the other "male" with noise
+    x1 = ifelse(b_labels + runif(n_obs,-2,2) < 5, 0, 1) 
     #x1 = sample(c(0,1),size=n_obs,replace = TRUE) 
     ####### x2 
     u2 = rlogis(n_obs, location =  0, scale = 1) 
-    b2 = 0.5
+    b2 = 0.5 * scale_effect_size
     #h_0(x2) = 0.42 * x2
     #u2 = h(x2 | x1) = h_0(x2) + b2 * x1 = 0.42 * x2 + 0.5 * x1
     x2 = (u2 - b2*x1)/0.42
     
     ####### x3
     u3 = rlogis(n_obs, location =  0, scale = 1) 
-    a1 = 0.2
-    a2 = 0.03
-    #u3 = h(x3|x1,x2,B) = 10*(h_0(x3) + eta(B) + a1*x1 + a2*x2)
+    a1 = 0.2  *  scale_effect_size 
+    a2 = 0.03 *  scale_effect_size 
+    #u3 = h(x3|x1,x2,B) = h_0(x3) + eta(B) + a1*x1 + a2*x2
     #h_0(x3) = 0.21 * x3 
-    etaB = (b_labels - 4)
+    etaB = (b_labels - 4) #
+    #etaB = 0 #No Effect 
+    etaB = sqrt(b_labels) #Effect
     x3 =  (u3 - etaB - a1*x1 - a2*x2)/0.21
     
     #Orginal Data
-    dat.s =  data.frame(x1 = x1, x2 = x2, x3 = x3)
-    dat.tf = tf$constant(as.matrix(dat.s), dtype = 'float32')
+    dat =  data.frame(x1 = x1, x2 = x2, x3 = x3)
+    dat.tf = tf$constant(as.matrix(dat), dtype = 'float32')
+    
+    # Minimal values
+    q1 = quantile(dat[,1], probs = c(0.05, 0.95)) 
+    q2 = quantile(dat[,2], probs = c(0.05, 0.95))
+    q3 = quantile(dat[,3], probs = c(0.05, 0.95))
     
     A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
     return(list(
       df_orig=dat.tf,  
-      min =  tf$reduce_min(dat.tf, axis=0L),
-      max =  tf$reduce_max(dat.tf, axis=0L),
+      min = tf$constant(c(q1[1], q2[1], q3[1]), dtype = 'float32'),
+      max = tf$constant(c(q1[2], q2[2], q3[2]), dtype = 'float32'),
     A=A))
 } 
 
@@ -142,17 +172,30 @@ train = dgp(n_obs=n_obs, b_labels = train_labels[1:n_obs])
 global_min = train$min
 global_max = train$max
 
+df = as.data.frame(train$df_orig$numpy())
+colnames(df) = c('X1', 'X2', 'X3')
+df$X4 = sqrt(train_labels[1:n_obs])
+
+lm(X4 ~ X1, df)
+confint(Colr(X3 ~ X1 + X2 + X4,df))
+confint(Colr(X4 ~ X1,df))
+
 # Fitting Tram
 df = data.frame(train$df_orig$numpy())
 pairs(df)
 
 
-fit.orig = Colr(X2~X1,df)
-summary(fit.orig)  # sollte 0.5 sein, ist auch
+fit.X2 = Colr(X2~X1,df)
+summary(fit.X2)  # sollte 0.5 sein, ist auch
+confint(fit.X2)
 
 df$label = train_labels[1:n_obs] 
-fit.orig = Colr(X3~ X1 + X2 + label,df)
-summary(fit.orig) 
+fit.X3 = Colr(X3 ~ X1 + X2 + label,df)
+summary(fit.X3) 
+
+fit.X3_X1 = Colr(X3 ~ X1 + X2 + label,df)
+summary(fit.X3) 
+
 
 # end Colr
 #Bis jetzt alles CI
@@ -183,17 +226,17 @@ input_shape <- c(28, 28, 1)
 # Define the CNN model using the functional API
 cnn_input <- layer_input(shape = input_shape)
 
-conv1 <- layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = 'relu')(cnn_input)
+conv1 <- layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = 'relu')(cnn_input)
 pool1 <- layer_max_pooling_2d(pool_size = c(2, 2))(conv1)
 
-conv2 <- layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = 'relu')(pool1)
+conv2 <- layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = 'relu')(pool1)
 pool2 <- layer_max_pooling_2d(pool_size = c(2, 2))(conv2)
 
-dropout <- layer_dropout(rate = 0.25)(pool2)
+#dropout <- layer_dropout(rate = 0.25)(pool2)
 
-flatten <- layer_flatten()(dropout)
+flatten <- layer_flatten()(pool2)
 
-dense1 <- layer_dense(units = 128, activation = 'relu')(flatten)
+dense1 <- layer_dense(units = 64, activation = 'relu')(flatten)
 dropout2 <- layer_dropout(rate = 0.5)(dense1)
 
 cnn_out <- layer_dense(units = 1, activation = 'linear')(dropout2)
@@ -205,6 +248,7 @@ tmp = k_reshape(k_constant(c(0,0,1)), shape=c(-1,3,1))
 cnn_tensor <- layer_multiply(repeated_tensor, tmp)
 # Reshape the tensor
 cnn_out2 <- layer_reshape(target_shape = c(3, 1))(cnn_tensor)
+
 
 # 
 
@@ -238,21 +282,55 @@ final_model$compile(optimizer, loss=semi_struct_dag_loss)
 final_model$evaluate(x = list(train$df_orig, train_images), y=train$df_orig, batch_size = 7L)
 
 
+
 ##### Training ####
+
+###### Warm start ####
+final_model$get_layer(name = "beta")$get_weights()
+weights = tf$constant(
+  as.matrix(c(
+   0.,.5 ,0.2,
+   0.,0.,0.03,
+   0.,0.,0.
+  ), nrow = 3), shape = c(3L,3L))
+final_model$get_layer(name = "beta")$set_weights(list(weights))
+final_model$get_layer(name = "beta")$get_weights()[[1]]
+
+
+##### Training ####
+ws = data.frame(w12=0.5, w13=0.2, w23=0.03)
+for (e in 1:100){
+  print(e)
+  final_model$fit(x = list(train$df_orig, train_images), 
+                         y=train$df_orig, 
+                         epochs = 1L,verbose = TRUE)
+  w = final_model$get_layer(name = "beta")$get_weights()[[1]]
+  #final_model$get_layer(name = "beta")$set_weights(list(weights))
+  ws = rbind(ws, c(w[1,2], w[1,3], w[2,3]))  
+}
+plot(0:200, ws[,1], type='l', ylim=c(-1,1))
+lines(0:200, ws[,2], col='red')
+lines(0:200, ws[,3], col='blue')
+abline(h=0.5, col='black', lty=2)
+abline(h=0.2, col='red', lty=2)
+abline(h=0.03, col='blue', )
+legend("topright", legend = c("w12 0.5", "w13 0.2", "w23 0.03"), col = c("black", "red", "blue"), lty = 1:1, cex = 0.8)
+
+
 if (file.exists(fn)){
   final_model$load_weights(fn)
 } else {
   hist = final_model$fit(x = list(train$df_orig, train_images), 
                          y=train$df_orig, 
-                         epochs = 50L,verbose = TRUE)
+                         epochs = 100L,verbose = TRUE)
+  final_model$get_layer(name = "beta")$get_weights()[[1]]
   final_model$save_weights(fn)
+  pdf(paste0('loss_',fn,'.pdf'))
   plot(hist$epoch, hist$history$loss)
   #Save a pdf of the loss function containing fn using pdf()
-  pdf(paste0('loss_',fn,'.pdf'))
   dev.off()
 }
-
-
+plot(hist$epoch, hist$history$loss, ylim=c(-0.40, +0.0))
 
 # final_model$evaluate(x = list(train$df_scaled, train_images), 
 #                      y=train$df_scaled, batch_size = 7L)
@@ -273,15 +351,26 @@ for (k in 1:(2+len_theta)){ #k = 1
   print(d[B,,k,B,]) #
 }
 
-o = train$df_orig$numpy()
-plot(o[,1],o[,2])
-lm(o[,2] ~ o[,1])
+h_params = final_model(list(train$df_orig, train_images))
+h_params
 
-d = train$df_scaled$numpy()
-plot(d[,1],d[,2])
-lm(d[,2] ~ d[,1])
+### Checking
+x1 = train$df_orig$numpy()[1:1000,1]
+b = train_labels[1:1000]
+lm(b ~ x1)
+plot(x1 , b)
+abline(lm(b ~ x1))
+plot(table(x1, b), col=TRUE)
 
-lm(d[,3] ~ d[,1] + d[,2]) #Direct causal effect 0.28
+eta_hat = h_params[1:1000,3,9]$numpy() 
+eta_true = sqrt(train_labels[1:1000])
+plot(eta_true, eta_hat)
+confint(lm(eta_hat ~ eta_true))
+abline(lm(eta_hat ~ eta_true))
+cor(eta_hat, eta_true)
+
+h_params[1:1000,3,1]$numpy()#CS 0
+h_params[1:1000,3,2]$numpy()#CS 0
 
 
 # Sampling fitted model w/o intervention --> OK 
