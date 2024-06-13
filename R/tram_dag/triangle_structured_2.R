@@ -90,7 +90,7 @@ dd = predict(fit.orig, newdata = data.frame(X1 = 0.5), type = 'density')
 x2s = as.numeric(rownames(dd))
 plot(x2s, dd, type = 'l', col='red')
 
-?predict.tram
+#?predict.tram
 summary(fit.orig)
 confint(fit.orig) #Original 
 # Fitting Tram
@@ -310,7 +310,9 @@ for (i in 2:3){
   ds = dx0.2$df_orig$numpy()[,i]
   print(paste0('sim mean ',mean(ds), '  med',median(ds)))
   print(paste0('DAG mean ',mean(d), '  med',median(d)))
-  hist(d, freq=FALSE, 50, main=paste0("green=We, red=Colr, hist DGP Do(X1=0.2) X_",i))
+  hist(d, freq=FALSE, 50, 
+       main=paste0("green=DGP, red=Colr, hist=Ours, 
+                   Do(X1=0.2) X_",i))
   lines(density(ds), col='green', lw=2)
   if (i ==2) lines(density(s2_colr), type = 'l', col='red')
   if (i ==3) lines(density(s3_colr), col='red')
