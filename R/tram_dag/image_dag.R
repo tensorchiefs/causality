@@ -1,4 +1,8 @@
 reticulate::py_config()
+#fn = 'image_dag_etaBNot0.h5' 
+#fn = 'image_dag_etaB0.h5' 
+fn = 'image_dag_etaBsqrt_simple_cnn_strong_effect6_dropout35.h5' 
+
 if (FALSE){
   ### Old Style Libraries### 
   library(keras)
@@ -64,9 +68,7 @@ semi_struct_dag_loss = function (t_i, h_params){
   return (-tf$reduce_mean(log_lik))
 }
 
-#fn = 'image_dag_etaBNot0.h5' 
-#fn = 'image_dag_etaB0.h5' 
-fn = 'image_dag_etaBsqrt_simple_cnn_strong_effects.h5' 
+
 library(fields)
 
 ### Loading CIFAR10 data
@@ -74,11 +76,15 @@ library(fields)
 my_images <- dataset_mnist()
 
 ## Getting Training data
-n_obs = 20000
+n_obs = 60000
 train_images <- my_images$train$x[1:n_obs,,] / 255.
 train_labels <- my_images$train$y[1:n_obs]
 dim(train_images)
 
+# Getting the test data
+test_images <- my_images$test$x / 255.
+test_labels <- my_images$test$y
+dim(test_images)
 
 if (FALSE){
   ###### Hack Attack replace the images with the first image of the label
@@ -167,10 +173,13 @@ dgp <- function(n_obs, b_labels) {
 
 
 # compare to Colr for tabular part
-n_obs=20000
 train = dgp(n_obs=n_obs, b_labels = train_labels[1:n_obs])
 global_min = train$min
 global_max = train$max
+
+test = dgp(n_obs=10000, b_labels = test_labels)
+
+
 
 df = as.data.frame(train$df_orig$numpy())
 colnames(df) = c('X1', 'X2', 'X3')
@@ -220,7 +229,7 @@ tabular_out$shape
 tabular_model(train$df_orig)
 
 
-###### create a cnn model
+###### create a cnn model ####
 input_shape <- c(28, 28, 1)
 
 # Define the CNN model using the functional API
@@ -228,18 +237,19 @@ cnn_input <- layer_input(shape = input_shape)
 
 conv1 <- layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = 'relu')(cnn_input)
 pool1 <- layer_max_pooling_2d(pool_size = c(2, 2))(conv1)
+dropout1 <- layer_dropout(rate = 0.35)(pool1)
 
-conv2 <- layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = 'relu')(pool1)
+conv2 <- layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = 'relu')(dropout1)
 pool2 <- layer_max_pooling_2d(pool_size = c(2, 2))(conv2)
 
-#dropout <- layer_dropout(rate = 0.25)(pool2)
+dropout2 <- layer_dropout(rate = 0.35)(pool2)
 
-flatten <- layer_flatten()(pool2)
+flatten <- layer_flatten()(dropout2)
 
 dense1 <- layer_dense(units = 64, activation = 'relu')(flatten)
-dropout2 <- layer_dropout(rate = 0.5)(dense1)
+dropout <- layer_dropout(rate = 0.35)(dense1)
 
-cnn_out <- layer_dense(units = 1, activation = 'linear')(dropout2)
+cnn_out <- layer_dense(units = 1, activation = 'linear')(dropout)
 
 # get shape batches, #Variables, 
 # since image impacts only x3, the first 2 cols should be zero
@@ -275,8 +285,46 @@ h_params[, ,9]
 # since images are in a source node we do not need to provide them
 semi_struct_dag_loss(train$df_orig, h_params)
 
+##### Optimizer ####
+if (FALSE){
+library(deepregression)
+print(final_model)
 
-optimizer = optimizer_adam()
+get_optimizer = function(layer){
+  if (layer$name == 'beta'){
+    return(optimizer_adam(learning_rate=1e-2))
+  } else {
+    if (layer$trainable){
+      return(optimizer_adam(learning_rate=1e-4))
+    } else {
+      return(NULL)
+    }
+  }
+}
+
+layers = final_model$layers
+ol = list()
+for (i in 1:length(layers)){
+  #if (layers[[i]]$name == 'beta'){
+    print(layers[[i]]$name)
+    ol = append(ol, tuple(get_optimizer(layers[[i]]), layers[[i]]))
+  #}
+}
+
+if(FALSE){
+  ol = list(
+    tuple(optimizer_adam(learning_rate=1e-4), get_layer(final_model, 'dense_1'))
+  )
+}
+
+optimizer = deepregression::multioptimizer(ol)
+class(optimizer)
+optimizer$minimize()
+class(optimizer_adam(learning_rate=1e-4))
+} else{
+  optimizer = optimizer_adam()
+}
+
 final_model$compile(optimizer, loss=semi_struct_dag_loss)
 #final_model$evaluate(x = train$df_scaled, y=train$df_scaled, batch_size = 7L)
 final_model$evaluate(x = list(train$df_orig, train_images), y=train$df_orig, batch_size = 7L)
@@ -318,20 +366,96 @@ abline(h=0.03, col='blue', )
 legend("topright", legend = c("w12 0.5", "w13 0.2", "w23 0.03"), col = c("black", "red", "blue"), lty = 1:1, cex = 0.8)
 }
 
+## This function freezes all weights except the layer called 'beta'
+freeze_weights = function(model){
+  layers = model$layers
+  for (i in 1:length(layers)){
+    #if (layers[[i]]$name != 'beta'){
+    if (i < 18){
+      layers[[i]]$trainable = FALSE
+    } else {
+      layers[[i]]$trainable = TRUE
+    }
+  }
+  #return(model)
+}
+
+release_weights = function(model){
+  layers = model$layers
+  for (i in 1:length(layers)){
+    layers[[i]]$trainable = TRUE
+  }
+  #return(model)
+}
+
+print(final_model)
+freeze_weights(final_model)
+print(final_model)
+release_weights(final_model)
+print(final_model)
+
+# Optimizers for different phases
+optimizer_frozen <- optimizer_adam(learning_rate = 1e-1)  # Larger learning rate for frozen phase
+optimizer_unfrozen <- optimizer_adam(learning_rate = 1e-3)  # Smaller learning rate for unfrozen phase
+
 if (file.exists(fn)){
   final_model$load_weights(fn)
 } else {
-  hist = final_model$fit(x = list(train$df_orig, train_images), 
-                         y=train$df_orig, 
-                         epochs = 5000L,verbose = TRUE)
+  # Initialize a data frame to store specific weights
+  ws <- data.frame(w12 = numeric(), w13 = numeric(), w23 = numeric())
+  # Initialize lists to store loss history
+  train_loss <- numeric()
+  val_loss <- numeric()
+  
+  # Training loop
+  num_epochs <- 10
+  for (e in 1:num_epochs) {
+    print(paste("Epoch", e))
+    if (e < 0) {
+      # Release weights and compile with the smaller learning rate
+      release_weights(final_model)
+      final_model$compile(optimizer = optimizer_unfrozen, loss = semi_struct_dag_loss)
+    } else {
+      # Freeze weights and compile with the larger learning rate
+      freeze_weights(final_model)
+      final_model$compile(optimizer = optimizer_frozen, loss = semi_struct_dag_loss)
+    }
+    
+    
+    hist <- final_model$fit(x = list(train$df_orig, train_images), 
+                            y = train$df_orig, 
+                            epochs = 1L, verbose = TRUE, 
+                            validation_data = list(list(test$df_orig, test_images), test$df_orig))
+    
+    # Append losses to history
+    train_loss <- c(train_loss, hist$history$loss)
+    val_loss <- c(val_loss, hist$history$val_loss)
+    
+    # Extract specific weights
+    w <- final_model$get_layer(name = "beta")$get_weights()[[1]]
+    ws <- rbind(ws, data.frame(w12 = w[1, 2], w13 = w[1, 3], w23 = w[2, 3]))
+  }
+  
   final_model$get_layer(name = "beta")$get_weights()[[1]]
   final_model$save_weights(fn)
-  pdf(paste0('loss_',fn,'.pdf'))
-  plot(hist$epoch, hist$history$loss)
+  #pdf(paste0('loss_',fn,'.pdf'))
+  epochs = length(train_loss)
+  plot(1:length(train_loss), train_loss)#, ylim=c(-0.53, .5))
+  lines(1:length(train_loss), val_loss, type = 'b', col = 'red')
+  
+  plot(1:epochs, ws[,1], type='l', ylim=c(0,6))
+  lines(1:epochs, ws[,2], col='red')
+  lines(1:epochs, ws[,3], col='blue')
+  abline(h=5, col='black', lty=2)
+  abline(h=2, col='red', lty=2)
+  abline(h=0.3, col='blue', )
+  legend("topleft", legend = c("w12 5", "w13 2", "w23 0.3"), col = c("black", "red", "blue"), lty = 1:1, cex = 0.8)
+
+  
   #Save a pdf of the loss function containing fn using pdf()
-  dev.off()
+  #dev.off()
 }
-plot(hist$epoch, hist$history$loss, ylim=c(-0.53, -0.5))
+plot(hist$epoch, hist$history$loss, ylim=c(-0.53, -0.48))
 
 # final_model$evaluate(x = list(train$df_scaled, train_images), 
 #                      y=train$df_scaled, batch_size = 7L)
