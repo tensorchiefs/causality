@@ -44,3 +44,8 @@ data/CAREFL_CF/Readme_files/*
 data/VACA1_triangle_lin/attick/*
 *.h5
 /tmp_oliver
+
+
+###### Special 
+# Except file1.h5
+!image_dag_etaBsqrt_simple_cnn_strong_effects.h5

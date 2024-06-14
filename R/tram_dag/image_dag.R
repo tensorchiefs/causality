@@ -66,7 +66,7 @@ semi_struct_dag_loss = function (t_i, h_params){
 
 #fn = 'image_dag_etaBNot0.h5' 
 #fn = 'image_dag_etaB0.h5' 
-fn = 'image_dag_etaBsqrt_warmstart.h5' 
+fn = 'image_dag_etaBsqrt_simple_cnn_strong_effects.h5' 
 library(fields)
 
 ### Loading CIFAR10 data
@@ -286,7 +286,8 @@ final_model$evaluate(x = list(train$df_orig, train_images), y=train$df_orig, bat
 ##### Training ####
 
 ###### Warm start ####
-final_model$get_layer(name = "beta")$get_weights()
+if (FALSE){
+  final_model$get_layer(name = "beta")$get_weights()
 weights = tf$constant(
   as.matrix(c(
    0.,.5 ,0.2,
@@ -315,14 +316,14 @@ abline(h=0.5, col='black', lty=2)
 abline(h=0.2, col='red', lty=2)
 abline(h=0.03, col='blue', )
 legend("topright", legend = c("w12 0.5", "w13 0.2", "w23 0.03"), col = c("black", "red", "blue"), lty = 1:1, cex = 0.8)
-
+}
 
 if (file.exists(fn)){
   final_model$load_weights(fn)
 } else {
   hist = final_model$fit(x = list(train$df_orig, train_images), 
                          y=train$df_orig, 
-                         epochs = 100L,verbose = TRUE)
+                         epochs = 5000L,verbose = TRUE)
   final_model$get_layer(name = "beta")$get_weights()[[1]]
   final_model$save_weights(fn)
   pdf(paste0('loss_',fn,'.pdf'))
@@ -330,7 +331,7 @@ if (file.exists(fn)){
   #Save a pdf of the loss function containing fn using pdf()
   dev.off()
 }
-plot(hist$epoch, hist$history$loss, ylim=c(-0.40, +0.0))
+plot(hist$epoch, hist$history$loss, ylim=c(-0.53, -0.5))
 
 # final_model$evaluate(x = list(train$df_scaled, train_images), 
 #                      y=train$df_scaled, batch_size = 7L)
