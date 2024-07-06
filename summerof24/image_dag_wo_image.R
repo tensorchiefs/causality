@@ -6,12 +6,12 @@ library(MASS)
 library(tensorflow)
 library(keras)
 library(tidyverse)
-source('R/tram_dag/utils_tf.R')
+source('summerof24/utils_tf.R')
 
 
 #### For TFP
 library(tfprobability)
-source('R/tram_dag/utils_tfp.R')
+source('summerof24/utils_tfp.R')
 
 
 fn = 'image_dah_wo_image_2Jul.h5'
@@ -108,7 +108,7 @@ train = dgp(n_obs=n_obs, b_labels=train_labels)
 (global_max = train$max)
 
 
-#### Fitting Tram ######
+#### Fitting Colr ######
 df = data.frame(train$df_orig$numpy())
 fit.orig = Colr(X2~X1,df)
 dd = predict(fit.orig, newdata = data.frame(X1 = 0.5), type = 'density')
@@ -117,6 +117,7 @@ plot(x2s, dd, type = 'l', col='red')
 
 ?predict.tram
 summary(fit.orig)
+(b21.colr = coef(fit.orig)[1])
 confint(fit.orig) #Original 
 # Fitting Tram
 df = data.frame(train$df_orig$numpy())
@@ -127,6 +128,9 @@ confint(fit.orig) #Original
 fit.orig = Colr(X3 ~ X1 + X2 + X4,df)
 summary(fit.orig)
 confint(fit.orig) #Original 
+(b31.colr = coef(fit.orig)[1])
+(b32.colr = coef(fit.orig)[2])
+(b34.colr = coef(fit.orig)[3])
 
 fit.orig = Colr(X4 ~ X1,df)
 summary(fit.orig)
@@ -186,12 +190,141 @@ param_model$compile(optimizer, loss=struct_dag_loss)
 param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
 
 
+##### Training 2nd Order Custom Loop ####
+if (FALSE){
+#hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 30L,verbose = TRUE, batch_size = nrow(train$df_orig))
+hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 30L,verbose = TRUE, batch_size=32L)
+#4.15 --> 4.12
+}
+    
+
+# Train the model using a custom training loop
+# Custom training loop
+# Separate the weights of "beta" layers
+# Retrieve the specific beta weights variable
+
+optimizer <- optimizer_adam()
+
+if (FALSE){
+  # Custom training loop w/o second order 
+  #4.17 --> 4.12
+  for (epoch in 1:30) {
+     with(tf$GradientTape(persistent = TRUE) %as% tape, {
+       # Compute the model's prediction - forward pass
+       h_params <- param_model(train$df_orig)
+       loss <- struct_dag_loss(train$df_orig, h_params)
+     })
+     # Compute gradients
+     gradients <- tape$gradient(loss, param_model$trainable_variables)
+     # Apply gradients to update the model parameters
+     optimizer$apply_gradients(purrr::transpose(list(gradients, param_model$trainable_variables)))
+     # Print the loss every epoch or more frequently if desired
+     print(paste("Epoch", epoch, ", Loss:", loss$numpy()))
+  }
+}
+
+
+beta_weights <- param_model$get_layer(name = "beta")$weights[[1]]
+# Set learning rates
+#0.001  # Learning rate for Hessian updates
+optimizer <- tf$keras$optimizers$Adam()  # Adam optimizer for other layers)
+# Wrap the custom training loop with tf_function
+# Prepare the dataset with batching
+batch_size <- 32
+num_batches <- ceiling(nrow(train$df_orig) / batch_size)
+indices <- sample(nrow(train$df_orig)) # Shuffle the indices
+
+# Custom training loop with batches
+epochs <- 200
+loss_values <- numeric(epochs)  # Vector to store loss values for each epoch
+
+# Lists to store beta weights for each epoch
+betas_21 <- numeric(epochs)
+betas_31 <- numeric(epochs)
+betas_32 <- numeric(epochs)
+betas_34<- numeric(epochs)
+
+for (epoch in 1:epochs) {
+  #epoch = 1
+  batch_losses <- c()  # Vector to store loss values for the current epoch's batches
+  
+  for (batch_num in 1:num_batches) {
+    #batch_num = 1
+    start_index <- (batch_num - 1) * batch_size + 1
+    end_index <- min(batch_num * batch_size, nrow(train$df_orig))
+    if (start_index > end_index) {
+      next
+    }
+    batch_indices <- indices[start_index:end_index]
+    if (length(batch_indices) == 0) {
+      next
+    }
+    batch_indices_tf <- tf$constant(batch_indices - 1L, dtype = tf$int32)
+    batch_data <- tf$gather(train$df_orig, batch_indices_tf)
+    # needs 
+    loss <- train_step_with_hessian_beta(train_data = batch_data, 
+                                         beta_weights = beta_weights, 
+                                         optimizer = optimizer,
+                                         lr_hessian = 0.1)
+    # Collect the batch loss
+    batch_losses <- c(batch_losses, loss$numpy())
+  }
+  
+  # Calculate the average loss for the current epoch
+  avg_epoch_loss <- mean(batch_losses)
+  
+  # Store the average loss for the current epoch
+  loss_values[epoch] <- avg_epoch_loss
+  
+  # Extract and store the beta weights for the current epoch
+  betas_out <- param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
+  betas_out <- betas_out[1,,]$numpy()
+  betas_21[epoch] <- betas_out[1,2]
+  betas_31[epoch] <- betas_out[1,3]
+  betas_32[epoch] <- betas_out[2,3]
+  betas_34[epoch] <- betas_out[4,3]
+  
+  if (epoch %% 10 == 0 || epoch == 1) {
+    cat(sprintf("Epoch %d, Average Loss: %f\n", epoch, avg_epoch_loss))
+    print(paste0('Betas: ', betas_out[1,2], ' colr:', b21.colr))
+    print(paste0('Betas: ', betas_out[1,3], ' colr:', b31.colr))
+    print(paste0('Betas: ', betas_out[2,3], ' colr:', b32.colr))
+    print(paste0('Betas: ', betas_out[4,3], ' colr:', b34.colr))
+  }
+}
+
+
+# After training, you can inspect the loss values and beta weights
+print(loss_values)
+print(betas_21)
+print(betas_31)
+print(betas_32)
+print(betas_34)
+
+# Plot the loss value
+plot(loss_values, type = "l", xlab = "Epoch", ylab = "Loss", main = "Loss Value vs. Epoch")
+# Plot the beta weights together with the Colr estimates in a single plot
+plot(betas_21, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch", ylim=c(-1,5))
+lines(rep(b21.colr, epochs), col = "red")
+lines(betas_31, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch")
+lines(rep(b31.colr, epochs), col = "red")
+lines(betas_32, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch")
+lines(rep(b32.colr, epochs), col = "red")
+lines(betas_34, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch")
+lines(rep(b34.colr, epochs), col = "red")
+
+
+
+loss# Save the model weights
+param_model %>% save_model_weights_hdf5('model_weights.h5')
+
+
+
 ##### Training ####
 if (file.exists(fn)){
   param_model$load_weights(fn)
 } else {
-  hist = param_model$fit(x = train$df_orig, y=train$df_orig, 
-                         epochs = 5000L,verbose = TRUE)
+  hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 100L,verbose = TRUE)
   param_model$save_weights(fn)
   plot(hist$epoch, hist$history$loss)
 }

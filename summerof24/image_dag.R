@@ -10,10 +10,12 @@ library(MASS)
 library(tensorflow)
 library(keras)
 library(tidyverse)
-source('R/tram_dag/utils_tf.R')
+library(tidyverse)
+source('summerof24/utils_tf.R')
+
 #### For TFP
 library(tfprobability)
-source('R/tram_dag/utils_tfp.R')
+source('summerof24/utils_tfp.R')
 
 
 ############## Semi-structured DAG with image (Very Special to DAG in this file) ################
@@ -307,9 +309,201 @@ optimizer
 final_model$compile(optimizer, loss=semi_struct_dag_loss)
 final_model$evaluate(x = list(train$df_orig, train_images), y=train$df_orig, batch_size = 7L)
 final_model
-##### Training ####
 
-###### Warm start ####
+
+
+
+
+##### Training with Hessian ####
+# Train the model using a custom training loop
+if (FALSE){
+  # Custom training loop w/o second order 
+  #4.17 --> 4.12
+  for (epoch in 1:2) {
+    with(tf$GradientTape(persistent = TRUE) %as% tape, {
+      # Compute the model's prediction - forward pass
+      h_params <- final_model(list(train$df_orig, train_images))
+      loss <- semi_struct_dag_loss(train$df_orig, h_params)
+    })
+    # Compute gradients
+    gradients <- tape$gradient(loss, final_model$trainable_variables)
+    # Apply gradients to update the model parameters
+    optimizer$apply_gradients(purrr::transpose(list(gradients, final_model$trainable_variables)))
+    # Print the loss every epoch or more frequently if desired
+    print(paste("Epoch", epoch, ", Loss:", loss$numpy()))
+  }
+}
+
+beta_weights <- final_model$get_layer(name = "beta")$weights[[1]]
+
+# Custom training loop
+# Separate the weights of "beta" layers
+# Retrieve the specific beta weights variable
+## Training in which the beta layers are trained with a 2nd order update using a Hessian
+train_step_with_hessian_beta_semi_struct <- tf_function(autograph = TRUE, 
+                                            function(train_data, train_images, beta_weights, optimizer, lr_hessian = 0.1 ) {
+#train_step <- function(train_data, beta_weights) {
+    # train_data = train$df_orig
+    #with(tf$GradientTape(persistent = TRUE) %as% tape2, { # Gradients for second-order derivatives
+    #  with(tf$GradientTape(persistent = TRUE) %as% tape1, { # Gradients for first-order derivatives 
+    with(tf$GradientTape() %as% tape2, { # Gradients for second-order derivatives
+      with(tf$GradientTape() %as% tape1, { # Gradients for first-order derivatives 
+        h_params <- final_model(list(train_data, train_images))
+        loss <- semi_struct_dag_loss(train_data, h_params)
+        #hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 500L,verbose = TRUE)
+      })
+    
+      # Compute first-order gradients
+      all_weights <- final_model$trainable_weights
+      all_grads <- tape1$gradient(loss, all_weights)
+      #optimizer$apply_gradients(purrr::transpose(list(all_grads, all_weights))) #HACKATTACK
+      other_gradients <- all_grads[!sapply(final_model$trainable_weights, function(weight) {
+        identical(weight$name, beta_weights$name)
+      })]
+      beta_gradients <- all_grads[sapply(final_model$trainable_weights, function(weight) {
+        identical(weight$name, beta_weights$name)
+      })]
+      other_weights <- final_model$trainable_weights[!sapply(final_model$trainable_weights, function(weight) {
+        identical(weight$name, beta_weights$name)
+      })]
+      if (length(beta_gradients) != 1) {
+        stop("Current implementation only supports **one** beta layer")
+      }
+      b = beta_gradients[[1]]
+      bl_shape <- beta_weights$shape
+      hessians <- tape2$jacobian(beta_gradients[[1]], beta_weights)  
+      
+   }) 
+  optimizer$apply_gradients(purrr::transpose(list(other_gradients, other_weights))) 
+  # Manipulate gradients and apply them 
+    # Flatten the Hessian tensor to a matrix for inversion
+    hessian_size <- bl_shape[[1]] * bl_shape[[2]]
+    hessian_flat <- tf$reshape(hessians, shape = c(hessian_size, hessian_size))  # Adjust shape as needed
+    # Add regularization to the Hessian
+    hessian_flat <- hessian_flat + tf$eye(hessian_size) * 1e-8
+    # Compute the inverse of the Hessian matrix
+    hessian_inv <- tf$linalg$inv(hessian_flat)
+    # DEBUG HACK ATTACK - replace with tf$linalg$inv when fixed <-------------TODO 
+    #hessian_inv <- tf$eye(hessian_size)  # Identity matrix of appropriate size
+    # Flatten the gradient for matrix multiplication
+    grads_flat <- tf$reshape(beta_gradients[[1]], shape = c(hessian_size, 1L))
+    # Compute the update using Hessian and gradient (this is the newton update rule)
+    beta_update <- tf$matmul(hessian_inv, grads_flat)
+    # Reshape the update back to the original shape
+    beta_update_reshaped <- tf$reshape(beta_update, shape = bl_shape)  # Adjust shape as needed
+    # Apply the update to the beta weights with the learning rate
+    beta_weights$assign_sub(lr_hessian * beta_update_reshaped)
+  loss
+})
+optimizer <- optimizer_adam()
+  
+
+
+
+
+# Set learning rates
+#0.001  # Learning rate for Hessian updates
+optimizer <- tf$keras$optimizers$Adam()  # Adam optimizer for other layers)
+# Wrap the custom training loop with tf_function
+# Prepare the dataset with batching
+batch_size <- 32
+num_batches <- ceiling(nrow(train$df_orig) / batch_size)
+indices <- sample(nrow(train$df_orig)) # Shuffle the indices
+
+# Custom training loop with batches
+epochs <- 200
+loss_values <- numeric(epochs)  # Vector to store loss values for each epoch
+
+# Lists to store beta weights for each epoch
+betas_21 <- numeric(epochs)
+betas_31 <- numeric(epochs)
+betas_32 <- numeric(epochs)
+
+for (epoch in 1:epochs) {
+  #epoch = 1
+  batch_losses <- c()  # Vector to store loss values for the current epoch's batches
+  
+  for (batch_num in 1:num_batches) {
+    #batch_num = 1
+    start_index <- (batch_num - 1) * batch_size + 1
+    end_index <- min(batch_num * batch_size, nrow(train$df_orig))
+    if (start_index > end_index) {
+      next
+    }
+    batch_indices <- indices[start_index:end_index]
+    if (length(batch_indices) == 0) {
+      next
+    }
+    batch_indices_tf <- tf$constant(batch_indices - 1L, dtype = tf$int32)
+    batch_data <- tf$gather(train$df_orig, batch_indices_tf)
+    # needs 
+    loss <- train_step_with_hessian_beta_semi_struct(train_data = batch_data,
+                                         train_images = train_images[batch_indices,,],
+                                         beta_weights = beta_weights, 
+                                         optimizer = optimizer,
+                                         lr_hessian = 0.1)
+    # Collect the batch loss
+    batch_losses <- c(batch_losses, loss$numpy())
+  }
+  
+  # Calculate the average loss for the current epoch
+  avg_epoch_loss <- mean(batch_losses)
+  
+  # Store the average loss for the current epoch
+  loss_values[epoch] <- avg_epoch_loss
+  
+  # Extract and store the beta weights for the current epoch
+  betas_out <- final_model$get_layer(name = "beta")$get_weights() * final_model$get_layer(name = "beta")$mask
+  betas_out <- betas_out[1,,]$numpy()
+  betas_21[epoch] <- betas_out[1,2]
+  betas_31[epoch] <- betas_out[1,3]
+  betas_32[epoch] <- betas_out[2,3]
+  
+  if (epoch %% 10 == 0 || epoch == 1) {
+    cat(sprintf("Epoch %d, Average Loss: %f\n", epoch, avg_epoch_loss))
+    print(paste0('Betas: ', betas_out[1,2]))#, ' colr:', b21.colr))
+    print(paste0('Betas: ', betas_out[1,3]))#, ' colr:', b31.colr))
+    print(paste0('Betas: ', betas_out[2,3]))#, ' colr:', b32.colr))
+  }
+}
+
+
+# After training, you can inspect the loss values and beta weights
+print(loss_values)
+print(betas_21)
+print(betas_31)
+print(betas_32)
+
+# Plot the loss value
+plot(loss_values, type = "l", xlab = "Epoch", ylab = "Loss", main = "Loss Value vs. Epoch")
+
+# Plot the beta weights together with the Colr estimates in a single plot
+plot(betas_21, type = "l", xlab = "Epoch", ylab = "Beta Value", 
+     main = "Semi Hessian Optimization lr_b = 0.1",
+     sub = "Green colr dashed lined need know of the DGP",
+     ylim=c(-1,11))
+lines(rep(5, epochs), col = "red")
+lines(betas_31, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch")
+lines(rep(9, epochs), col = "red")
+lines(betas_32, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch")
+lines(rep(0.3, epochs), col = "red")
+
+# Comparing with Colr
+df = as.data.frame(train$df_orig$numpy())
+colnames(df) = c('X1', 'X2', 'X3')
+df$X4 = sqrt(train_labels[1:n_obs]) #GT not accessible in practivce
+fit.colr = Colr(X3 ~ X1 + X2 + X4,df) #Note: X4 is not accessible in practice
+confint(fit.colr)
+dfp = as.numeric(confint(fit.colr)[1:2,])
+for (i in 1:4) abline(h=dfp[i], col='green', lty=2)
+
+dfp = confint(Colr(X2 ~ X1,df))
+for (i in 1:4) abline(h=dfp[i], col='green')
+
+####### End of Hessian 
+
+
+####### Warm start #########
 if (FALSE){
   final_model$get_layer(name = "beta")$get_weights()
 weights = tf$constant(

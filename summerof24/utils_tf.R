@@ -164,6 +164,64 @@ update_learning_rate <- function(optimizer, current_loss, factor=0.1, patience=5
   }
 }
 
+
+## Training in which the beta layers are trained with a 2nd order update using a Hessian
+train_step_with_hessian_beta <- tf_function(autograph = TRUE, 
+                                            function(train_data, beta_weights, optimizer, lr_hessian = 0.1 ) {
+#train_step <- function(train_data, beta_weights) {
+    # train_data = train$df_orig
+    #with(tf$GradientTape(persistent = TRUE) %as% tape2, { # Gradients for second-order derivatives
+    #  with(tf$GradientTape(persistent = TRUE) %as% tape1, { # Gradients for first-order derivatives 
+    with(tf$GradientTape() %as% tape2, { # Gradients for second-order derivatives
+      with(tf$GradientTape() %as% tape1, { # Gradients for first-order derivatives 
+        h_params <- param_model(train_data)
+        loss <- struct_dag_loss(train_data, h_params)
+        #hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 500L,verbose = TRUE)
+      })
+    
+      # Compute first-order gradients
+      all_weights <- param_model$trainable_weights
+      all_grads <- tape1$gradient(loss, all_weights)
+      #optimizer$apply_gradients(purrr::transpose(list(all_grads, all_weights))) #HACKATTACK
+      other_gradients <- all_grads[!sapply(param_model$trainable_weights, function(weight) {
+        identical(weight$name, beta_weights$name)
+      })]
+      beta_gradients <- all_grads[sapply(param_model$trainable_weights, function(weight) {
+        identical(weight$name, beta_weights$name)
+      })]
+      other_weights <- param_model$trainable_weights[!sapply(param_model$trainable_weights, function(weight) {
+        identical(weight$name, beta_weights$name)
+      })]
+      if (length(beta_gradients) != 1) {
+        stop("Current implementation only supports **one** beta layer")
+      }
+      b = beta_gradients[[1]]
+      bl_shape <- beta_weights$shape
+      hessians <- tape2$jacobian(beta_gradients[[1]], beta_weights)  
+      
+   }) 
+  optimizer$apply_gradients(purrr::transpose(list(other_gradients, other_weights))) 
+  # Manipulate gradients and apply them 
+    # Flatten the Hessian tensor to a matrix for inversion
+    hessian_size <- bl_shape[[1]] * bl_shape[[2]]
+    hessian_flat <- tf$reshape(hessians, shape = c(hessian_size, hessian_size))  # Adjust shape as needed
+    # Add regularization to the Hessian
+    hessian_flat <- hessian_flat + tf$eye(hessian_size) * 1e-8
+    # Compute the inverse of the Hessian matrix
+    hessian_inv <- tf$linalg$inv(hessian_flat)
+    # DEBUG HACK ATTACK - replace with tf$linalg$inv when fixed <-------------TODO 
+    #hessian_inv <- tf$eye(hessian_size)  # Identity matrix of appropriate size
+    # Flatten the gradient for matrix multiplication
+    grads_flat <- tf$reshape(beta_gradients[[1]], shape = c(hessian_size, 1L))
+    # Compute the update using Hessian and gradient (this is the newton update rule)
+    beta_update <- tf$matmul(hessian_inv, grads_flat)
+    # Reshape the update back to the original shape
+    beta_update_reshaped <- tf$reshape(beta_update, shape = bl_shape)  # Adjust shape as needed
+    # Apply the update to the beta weights with the learning rate
+    beta_weights$assign_sub(lr_hessian * beta_update_reshaped)
+  loss
+})
+
 train_step = function(thetaNN_l, parents_l, target_l, optimizer){
   n = length(thetaNN_l)
   
