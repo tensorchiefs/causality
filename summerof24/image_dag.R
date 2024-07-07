@@ -1,5 +1,6 @@
 reticulate::py_config()
-fn = 'summerof24/image5.h5' 
+set.seed(1)
+fn = 'summerof24/image_keras.h5' 
 
 
 ##################################
@@ -16,7 +17,6 @@ source('summerof24/utils_tf.R')
 #### For TFP
 library(tfprobability)
 source('summerof24/utils_tfp.R')
-
 
 ############## Semi-structured DAG with image (Very Special to DAG in this file) ################
 semi_struct_dag_loss = function (t_i, h_params){
@@ -310,13 +310,11 @@ final_model$compile(optimizer, loss=semi_struct_dag_loss)
 final_model$evaluate(x = list(train$df_orig, train_images), y=train$df_orig, batch_size = 7L)
 final_model
 
-
-
-
-
 ##### Training with Hessian ####
-# Train the model using a custom training loop
 if (FALSE){
+
+if (FALSE){
+  # Train the model using a custom training loop (just to check)
   # Custom training loop w/o second order 
   #4.17 --> 4.12
   for (epoch in 1:2) {
@@ -341,11 +339,16 @@ beta_weights <- final_model$get_layer(name = "beta")$weights[[1]]
 # Retrieve the specific beta weights variable
 ## Training in which the beta layers are trained with a 2nd order update using a Hessian
 train_step_with_hessian_beta_semi_struct <- tf_function(autograph = TRUE, 
-                                            function(train_data, train_images, beta_weights, optimizer, lr_hessian = 0.1 ) {
+                                            function(train_data, train_images, beta_weights, optimizer, lr_hessian = 0.1, beta_only=FALSE) {
 #train_step <- function(train_data, beta_weights) {
     # train_data = train$df_orig
     #with(tf$GradientTape(persistent = TRUE) %as% tape2, { # Gradients for second-order derivatives
     #  with(tf$GradientTape(persistent = TRUE) %as% tape1, { # Gradients for first-order derivatives 
+    # if (beta_only) {
+    #   
+    # } else {
+    #   
+    # }
     with(tf$GradientTape() %as% tape2, { # Gradients for second-order derivatives
       with(tf$GradientTape() %as% tape1, { # Gradients for first-order derivatives 
         h_params <- final_model(list(train_data, train_images))
@@ -372,7 +375,6 @@ train_step_with_hessian_beta_semi_struct <- tf_function(autograph = TRUE,
       b = beta_gradients[[1]]
       bl_shape <- beta_weights$shape
       hessians <- tape2$jacobian(beta_gradients[[1]], beta_weights)  
-      
    }) 
   optimizer$apply_gradients(purrr::transpose(list(other_gradients, other_weights))) 
   # Manipulate gradients and apply them 
@@ -397,12 +399,6 @@ train_step_with_hessian_beta_semi_struct <- tf_function(autograph = TRUE,
 })
 optimizer <- optimizer_adam()
   
-
-
-
-
-# Set learning rates
-#0.001  # Learning rate for Hessian updates
 optimizer <- tf$keras$optimizers$Adam()  # Adam optimizer for other layers)
 # Wrap the custom training loop with tf_function
 # Prepare the dataset with batching
@@ -411,14 +407,17 @@ num_batches <- ceiling(nrow(train$df_orig) / batch_size)
 indices <- sample(nrow(train$df_orig)) # Shuffle the indices
 
 # Custom training loop with batches
-epochs <- 200
+epochs <- 50
 loss_values <- numeric(epochs)  # Vector to store loss values for each epoch
+loss_val <- numeric(epochs)
 
 # Lists to store beta weights for each epoch
 betas_21 <- numeric(epochs)
 betas_31 <- numeric(epochs)
 betas_32 <- numeric(epochs)
 
+time.start = Sys.time()
+time.last = Sys.time()
 for (epoch in 1:epochs) {
   #epoch = 1
   batch_losses <- c()  # Vector to store loss values for the current epoch's batches
@@ -459,14 +458,21 @@ for (epoch in 1:epochs) {
   betas_31[epoch] <- betas_out[1,3]
   betas_32[epoch] <- betas_out[2,3]
   
+  validation_data = list(list(test$df_orig, test_images))
+  val_loss = final_model$evaluate(x = list(test$df_orig, test_images), y=test$df_orig)
+  loss_val[epoch] <- val_loss
+  
   if (epoch %% 10 == 0 || epoch == 1) {
-    cat(sprintf("Epoch %d, Average Loss: %f\n", epoch, avg_epoch_loss))
+    #Print time needed for 10 epochs
+    print(Sys.time())
+    print(Sys.time() - time.last)
+    time.last = Sys.time()
+    cat(sprintf("Epoch %d, Average Loss: %f val_loss: %f)\n", epoch, avg_epoch_loss, val_loss))
     print(paste0('Betas: ', betas_out[1,2]))#, ' colr:', b21.colr))
     print(paste0('Betas: ', betas_out[1,3]))#, ' colr:', b31.colr))
     print(paste0('Betas: ', betas_out[2,3]))#, ' colr:', b32.colr))
   }
 }
-
 
 # After training, you can inspect the loss values and beta weights
 print(loss_values)
@@ -475,7 +481,12 @@ print(betas_31)
 print(betas_32)
 
 # Plot the loss value
-plot(loss_values, type = "l", xlab = "Epoch", ylab = "Loss", main = "Loss Value vs. Epoch")
+#loss_values_2 = loss_values
+#loss_val_2 = loss_val
+plot(loss_values, type = "l", xlab = "Epoch", ylab = "Loss", main = "Semi Hessian Optimization lr_b = 0.1 (two runs)", ylim=c(-0.5,-0.4))
+lines(loss_val, col='green')
+lines(loss_values_2, col='black')
+lines(loss_val_2, col='green')
 
 # Plot the beta weights together with the Colr estimates in a single plot
 plot(betas_21, type = "l", xlab = "Epoch", ylab = "Beta Value", 
@@ -500,23 +511,25 @@ for (i in 1:4) abline(h=dfp[i], col='green', lty=2)
 dfp = confint(Colr(X2 ~ X1,df))
 for (i in 1:4) abline(h=dfp[i], col='green')
 
+# Save model name it fn+hessian+epoch
+final_model$save_weights(paste0(fn, '_hessian_', epochs, '.h5'))
+save.image(paste0(fn, '_hessian_', epochs, '.RData'))
+
+} #if (FALSE) 
 ####### End of Hessian 
 
-
-####### Warm start #########
+####### Training with Warm start #########
 if (FALSE){
   final_model$get_layer(name = "beta")$get_weights()
 weights = tf$constant(
   as.matrix(c(
-   0.,.5 ,0.2,
-   0.,0.,0.03,
+   0.,5. ,9.0,
+   0.,0.,0.3,
    0.,0.,0.
   ), nrow = 3), shape = c(3L,3L))
 final_model$get_layer(name = "beta")$set_weights(list(weights))
 final_model$get_layer(name = "beta")$get_weights()[[1]]
 
-
-  ##### Training ####
   ws = data.frame(w12=0.5, w13=0.2, w23=0.03)
   for (e in 1:100){
     print(e)
@@ -568,6 +581,8 @@ print(final_model)
 #optimizer_frozen <- optimizer_adam(learning_rate = 1e-3)  # Larger learning rate for frozen phase
 #optimizer_unfrozen <- optimizer_adam(learning_rate = 1e-3)  # Smaller learning rate for unfrozen phase
 
+
+####### Normal Training ####
 final_model
 if (file.exists(fn)){
   final_model$load_weights(fn)
@@ -579,7 +594,7 @@ if (file.exists(fn)){
   val_loss <- numeric()
   
   # Training loop
-  num_epochs <- 30
+  num_epochs <- 100
   for (e in 1:num_epochs) {
     print(paste("Epoch", e))
     # if (e < Inf) {
@@ -607,18 +622,19 @@ if (file.exists(fn)){
     ws <- rbind(ws, data.frame(w12 = w[1, 2], w13 = w[1, 3], w23 = w[2, 3]))
   }
   
-  final_model$save_weights(fn)
+  final_model$save_weights(paste0(fn, '_normal_', num_epochs, '.h5'))
+  save.image(paste0(fn, '_normal_', num_epochs, '.RData'))
   #pdf(paste0('loss_',fn,'.pdf'))
   epochs = length(train_loss)
-  plot(1:length(train_loss), train_loss)#, ylim=c(-0.53, .5))
-  lines(1:length(train_loss), val_loss, type = 'b', col = 'red')
+  plot(1:length(train_loss), train_loss, type='l', main='Normal Training', ylim=c(-0.5, -0.4))
+  lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
   
-  plot(1:epochs, ws[,1], type='l', ylim=c(0,10))
-  lines(1:epochs, ws[,2], col='red')
-  lines(1:epochs, ws[,3], col='blue')
-  abline(h=5, col='black', lty=2)
-  abline(h=2, col='red', lty=2)
-  abline(h=0.3, col='blue', )
+  plot(1:epochs, ws[,1], type='l', ylim=c(0,10), main='Normal Training')
+  lines(1:epochs, ws[,2], col='black')
+  lines(1:epochs, ws[,3], col='black')
+  abline(h=9, col='red')
+  abline(h=5, col='red')
+  abline(h=0.3, col='red', )
   legend("topleft", legend = c("w12 5", "w13 2", "w23 0.3"), col = c("black", "red", "blue"), lty = 1:1, cex = 0.8)
 
   

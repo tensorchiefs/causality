@@ -235,7 +235,7 @@ num_batches <- ceiling(nrow(train$df_orig) / batch_size)
 indices <- sample(nrow(train$df_orig)) # Shuffle the indices
 
 # Custom training loop with batches
-epochs <- 200
+epochs <- 5000  # Number of epochs
 loss_values <- numeric(epochs)  # Vector to store loss values for each epoch
 
 # Lists to store beta weights for each epoch
@@ -244,6 +244,8 @@ betas_31 <- numeric(epochs)
 betas_32 <- numeric(epochs)
 betas_34<- numeric(epochs)
 
+time.start = Sys.time()
+time.last = Sys.time()
 for (epoch in 1:epochs) {
   #epoch = 1
   batch_losses <- c()  # Vector to store loss values for the current epoch's batches
@@ -285,6 +287,9 @@ for (epoch in 1:epochs) {
   betas_34[epoch] <- betas_out[4,3]
   
   if (epoch %% 10 == 0 || epoch == 1) {
+    print(Sys.time())
+    print(Sys.time() - time.last)
+    time.last = Sys.time()
     cat(sprintf("Epoch %d, Average Loss: %f\n", epoch, avg_epoch_loss))
     print(paste0('Betas: ', betas_out[1,2], ' colr:', b21.colr))
     print(paste0('Betas: ', betas_out[1,3], ' colr:', b31.colr))
@@ -302,21 +307,24 @@ print(betas_32)
 print(betas_34)
 
 # Plot the loss value
-plot(loss_values, type = "l", xlab = "Epoch", ylab = "Loss", main = "Loss Value vs. Epoch")
+plot(loss_values, type = "l", xlab = "Epoch", ylab = "Loss", main = "Semi Hessian lr=0.1", ylim=c(1.7075, 1.710))
+abline(h=1.708783, col='blue')
 # Plot the beta weights together with the Colr estimates in a single plot
-plot(betas_21, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch", ylim=c(-1,5))
-lines(rep(b21.colr, epochs), col = "red")
-lines(betas_31, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch")
-lines(rep(b31.colr, epochs), col = "red")
-lines(betas_32, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch")
-lines(rep(b32.colr, epochs), col = "red")
-lines(betas_34, type = "l", xlab = "Epoch", ylab = "Beta Value", main = "Beta Values vs. Epoch")
-lines(rep(b34.colr, epochs), col = "red")
-
-
+plot(betas_21, type = "l", xlab = "Epoch", ylab = "Beta Value", main =  "Semi Hessian lr=0.1", ylim=c(-1,5))
+lines(rep(b21.colr, epochs), col = "green")
+lines(betas_31, type = "l", xlab = "Epoch", ylab = "Beta Value")
+lines(rep(b31.colr, epochs), col = "green")
+lines(betas_32, type = "l", xlab = "Epoch", ylab = "Beta Value")
+lines(rep(b32.colr, epochs), col = "green")
+lines(betas_34, type = "l", xlab = "Epoch", ylab = "Beta Value")
+lines(rep(b34.colr, epochs), col = "green")
 
 loss# Save the model weights
-param_model %>% save_model_weights_hdf5('model_weights.h5')
+param_model %>% save_model_weights_hdf5('model_weights_hessian_image_dag_wo_image.h5')
+### Save the workspace
+save.image('image_dag_wo_image.RData')
+if (FALSE){
+  
 
 
 
@@ -563,7 +571,8 @@ if(FALSE){
   optimizer.apply_gradients(zip(gradients, param_model.trainable_variables))
 }
 
-
+} #End False
+###### Ende ##########
 
 
 
