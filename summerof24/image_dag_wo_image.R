@@ -13,15 +13,15 @@ source('summerof24/utils_tf.R')
 library(tfprobability)
 source('summerof24/utils_tfp.R')
 
-
-fn = 'image_dah_wo_image_2Jul.h5'
+set.seed(1)
+fn = 'image_dag_wo_image_8Jul_large.h5'
 
 ### Loading CIFAR10 data
 #my_images <- dataset_cifar10()
 my_images <- dataset_mnist()
 
 ## Getting Training data
-n_obs = 20000
+n_obs = 60000
 train_images <- my_images$train$x[1:n_obs,,]
 dim(train_images)
 train_labels <- my_images$train$y[1:n_obs]
@@ -98,7 +98,6 @@ dgp <- function(n_obs, b_labels=NULL) {
 
 
 # compare to Colr for tabular part
-n_obs=4000
 #train_images <- my_images$train$x[1:n_obs,,] / 255.
 train_labels <- my_images$train$y[1:n_obs]
 
@@ -111,6 +110,7 @@ train = dgp(n_obs=n_obs, b_labels=train_labels)
 #### Fitting Colr ######
 df = data.frame(train$df_orig$numpy())
 fit.orig = Colr(X2~X1,df)
+confint(fit.orig)
 dd = predict(fit.orig, newdata = data.frame(X1 = 0.5), type = 'density')
 x2s = as.numeric(rownames(dd))
 plot(x2s, dd, type = 'l', col='red')
@@ -134,7 +134,7 @@ confint(fit.orig) #Original
 
 fit.orig = Colr(X4 ~ X1,df)
 summary(fit.orig)
-confint(fit.orig) #Original 
+confint(Colr(X4 ~ X1,df)) #Original 
 
 MA =  matrix(c(
   0, 'ls', 'ls', 'ls', 
@@ -235,7 +235,7 @@ num_batches <- ceiling(nrow(train$df_orig) / batch_size)
 indices <- sample(nrow(train$df_orig)) # Shuffle the indices
 
 # Custom training loop with batches
-epochs <- 5000  # Number of epochs
+epochs <- 1  # Number of epochs
 loss_values <- numeric(epochs)  # Vector to store loss values for each epoch
 
 # Lists to store beta weights for each epoch
@@ -307,10 +307,10 @@ print(betas_32)
 print(betas_34)
 
 # Plot the loss value
-plot(loss_values, type = "l", xlab = "Epoch", ylab = "Loss", main = "Semi Hessian lr=0.1", ylim=c(1.7075, 1.710))
+plot(loss_values, type = "l", xlab = "Epoch", ylab = "Loss", main = "Semi Hessian lr=0.1 60k Training", ylim=c(1.7075, 1.720))
 abline(h=1.708783, col='blue')
 # Plot the beta weights together with the Colr estimates in a single plot
-plot(betas_21, type = "l", xlab = "Epoch", ylab = "Beta Value", main =  "Semi Hessian lr=0.1", ylim=c(-1,5))
+plot(betas_21, type = "l", xlab = "Epoch", ylab = "Beta Value", main =  "Semi Hessian lr=0.1 60k Traing", ylim=c(-1,5))
 lines(rep(b21.colr, epochs), col = "green")
 lines(betas_31, type = "l", xlab = "Epoch", ylab = "Beta Value")
 lines(rep(b31.colr, epochs), col = "green")
@@ -319,12 +319,19 @@ lines(rep(b32.colr, epochs), col = "green")
 lines(betas_34, type = "l", xlab = "Epoch", ylab = "Beta Value")
 lines(rep(b34.colr, epochs), col = "green")
 
+fit3.colr = Colr(X3 ~ X1 + X2 + X4,df) 
+confint(fit3.colr)
+dfp = as.numeric(confint(fit3.colr)[1:3,])
+for (i in 1:6) abline(h=dfp[i], col='green', lty=2)
+
+fit2.colr = Colr(X2 ~ X1,df) 
+confint(fit2.colr)
+dfp = as.numeric(confint(fit2.colr)[1,])
+for (i in 1:2) abline(h=dfp[i], col='green', lty=2)
+
 loss# Save the model weights
-param_model %>% save_model_weights_hdf5('model_weights_hessian_image_dag_wo_image.h5')
-### Save the workspace
-save.image('image_dag_wo_image.RData')
-if (FALSE){
-  
+save.image(paste0(fn, '_hessian_', epochs, '.RData'))
+param_model$save_weights(paste0(fn, '_hessian_', epochs, '.h5'))
 
 
 
@@ -571,7 +578,7 @@ if(FALSE){
   optimizer.apply_gradients(zip(gradients, param_model.trainable_variables))
 }
 
-} #End False
+
 ###### Ende ##########
 
 
