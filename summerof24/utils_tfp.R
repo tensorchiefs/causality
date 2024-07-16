@@ -1,5 +1,5 @@
-source('R/tram_dag/bern_utils.R')
-source('tram_scm/model_utils.R')
+#source('R/tram_dag/bern_utils.R')
+#source('tram_scm/model_utils.R')
 
 # From Utils ###############################
 version_info = function(){

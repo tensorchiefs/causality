@@ -1,0 +1,146 @@
+---
+title: "Orthogonalization"
+author: "Oliver Dürr"
+format: 
+  html:
+    toc: true
+    toc-title: "Table of Contents"
+    toc-depth: 3
+    fig-width: 6
+    fig-height: 3
+    code-fold: true
+    code-tools: true
+    mathjax: true
+  # pdf:
+  #   toc: true
+  #   toc-title: "Table of Contents"
+---
+
+# Some notes on orthogonalization (preliminary)
+
+
+
+::: {.callout-note icon=true}
+**Note for Former Physicists**
+
+Here it’s best not to think in terms of physical units. You can always apply a standardization or normalization transformation to make all quantities unit-less. This simplifies operations and ensures $X \in \mathbb{R}^{n \times p}$ and $y \in \mathbb{R}^n$ are comparable and live in the same space.
+:::
+
+## Projection Matrix and Column Space
+
+The projection matrix $P_X = X(X'X)^{-1}X'$ projects any vector $y \in \mathbb{R}^n$ onto the column space of $X$. The column space of $X$ is the space spanned by the columns of $X$ and is a $p$-dimensional subspace of $\mathbb{R}^n$. Also, $\hat{y}_i = \hat{\beta}_1 x_{i1} +  \hat{\beta}_2 x_{i2} + \ldots +  \hat{\beta}_p x_{ip}$ is the projection of $y$ onto the column space of $X$. It's not surprising that the projection on $y$ is $\hat y$, i.e. $\hat{y} = P_X \; y$.
+
+The proof is pretty easy. The coefficients $\hat{\beta} = (X'X)^{-1}X'y$ are the solution to the normal equation $X'X \hat{\beta} = X'\hat{y}$. So, we can write $\hat{y} = X \hat{\beta} = X(X'X)^{-1}X'y = P_X y$.
+
+### Example
+
+Assume we make a linear regression with two coefficients $\beta_0$ and $\beta_1$. We start with three data points $(1,0)$, $(1,1)$, $(1,2)$.
+
+
+```{r warning=FALSE, echo=TRUE}
+#| code-fold: show
+X <- matrix(c(1, 0, 
+              1, 1, 
+              1, 2), nrow = 3, byrow = TRUE)
+X
+(XtX <- t(X) %*% X)
+(XtX_inv <- solve(XtX))
+(PX <- X %*% XtX_inv %*% t(X))
+
+```
+The projection matrix   $P_X$  projects a three-dimensional vector  $y$  into a two-dimensional subspace of the three-dimensional space, which is spanned by the columns of  $X$.
+
+#### Doing the regression
+Now we use the projector $P_X$ to project a vector $y$ into the column space of $X$. We can also do this with the `lm` function in R. 
+
+
+```{r}
+#| code-fold: show
+# Example
+y <- c(0.3333333, 0.7333333, 2.0000000)
+
+# Projection to the column space
+y_proj <- PX %*% y
+
+t(y_proj)
+
+## Same with lm
+lm = lm(y ~ X[,1] + X[,2] - 1)
+predict(lm)
+```
+#### Visualization
+Show below is the column space of $X$ and the projection of $y$ onto this space. The residual is the vector that is orthogonal to the column space of $X$. The column space is shown in red, you might need to rotate the plot to see the plane. 
+
+```{r residual, fig.width=8, fig.height=6, warning=FALSE, message=FALSE}
+library(plotly)
+
+# Calculate the residual
+residual <- y - y_proj
+
+# Create the plane spanned by the column vectors of X
+# Define two points in the plane using the column vectors of X
+p1 <- X[, 1]
+p2 <- X[, 2]
+
+# Generate grid points for the plane
+t_vals <- seq(-1, 2, length.out = 10)
+s_vals <- seq(-1, 2, length.out = 10)
+grid <- expand.grid(t_vals, s_vals)
+plane_points <- p1 %*% t(grid$Var1) + p2 %*% t(grid$Var2)
+x_plane <- matrix(plane_points[1, ], nrow = length(t_vals))
+y_plane <- matrix(plane_points[2, ], nrow = length(s_vals))
+z_plane <- matrix(plane_points[3, ], nrow = length(t_vals))
+
+# Create the plot
+fig <- plot_ly()
+
+# Function to add an arrow from the origin to a point
+add_arrow <- function(fig, x, y, z, name, color) {
+  fig <- fig %>%
+    add_trace(type = 'scatter3d', mode = 'lines+markers',
+              x = c(0, x), y = c(0, y), z = c(0, z),
+              line = list(color = color, width = 6),
+              marker = list(size = 4, color = color),
+              name = name)
+  return(fig)
+}
+
+# Add arrows for the column vectors of X
+fig <- add_arrow(fig, X[1, 1], X[2, 1], X[3, 1], 'x.1', 'blue')
+fig <- add_arrow(fig, X[1, 2], X[2, 2], X[3, 2], 'x.2', 'green')
+
+# Add arrow for the vector y
+fig <- add_arrow(fig, y[1], y[2], y[3], 'y', 'purple')
+
+# Add arrow for the projection of y (y_hat)
+fig <- add_arrow(fig, y_proj[1], y_proj[2], y_proj[3], 'y_hat', 'red')
+
+# Add arrow for the residual
+fig <- fig %>%
+  add_trace(type = 'scatter3d', mode = 'lines+markers',
+            x = c(y_proj[1], y[1]), y = c(y_proj[2], y[2]), z = c(y_proj[3], y[3]),
+            line = list(color = 'orange', width = 6, dash = 'dash'),
+            marker = list(size = 4, color = 'orange'),
+            name = 'residual')
+
+# Plot the plane
+fig <- fig %>%
+  add_surface(x = x_plane, y = y_plane, z = z_plane, colorscale = 'Reds', opacity = 0.5, showscale = FALSE)
+
+# Update layout
+fig <- fig %>%
+  layout(scene = list(
+    xaxis = list(title = 'e1'),
+    yaxis = list(title = 'e2'),
+    zaxis = list(title = 'e3') 
+  ),
+  legend = list(yanchor = "top", y = 0.99, xanchor = "left", x = 0.01))
+
+# Show the plot
+fig
+```
+
+## Orthogonalization
+
+
+

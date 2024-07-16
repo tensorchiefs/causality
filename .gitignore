@@ -50,3 +50,7 @@ data/VACA1_triangle_lin/attick/*
 # Except file1.h5
 !image_dag_etaBsqrt_simple_cnn_strong_effects.h5
 summerof24/Readme.html
+summerof24/orthog/__init__.py
+/summerof24/orthog/__pycache__
+summerof24/Orthogonalisation/Orthogonalization.html
+/summerof24/Orthogonalisation/Orthogonalization_files
