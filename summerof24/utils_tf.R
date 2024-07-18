@@ -220,7 +220,8 @@ train_step_with_hessian_beta <- tf_function(autograph = TRUE,
     # Apply the update to the beta weights with the learning rate
     beta_weights$assign_sub(lr_hessian * beta_update_reshaped)
   loss
-})
+})  
+
 
 train_step = function(thetaNN_l, parents_l, target_l, optimizer){
   n = length(thetaNN_l)

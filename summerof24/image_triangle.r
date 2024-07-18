@@ -1,7 +1,19 @@
+
+##### Oliver's MAC ####
+reticulate::use_python("/Users/oli/miniforge3/envs/r-tensorflow/bin/python3.8", required = TRUE)
+library(reticulate)
+
+reticulate::py_config()
+library(tensorflow)
+library(keras)
+
+cnn_input <- layer_input(shape = c(2L,2L))
+##### END Oliver's MAC ####
+
 reticulate::py_config()
 set.seed(1)
 # Attention: wd must be summerof24 in causality
-fn = 'image_keras.h5' 
+fn = 'image_keras_triagnle.h5' 
 
 
 ##################################
@@ -82,14 +94,31 @@ colorize <- function(images, colors) {
 }
 
 set.seed(1)
-cols_train = sample(x=c(1,2,3),size=length(my_images$train$y), replace = TRUE)
+make_cols <- function(ys){
+  #ys = my_images$train$y
+  cols = rep(0, nrow = length(ys))
+  for (i in 1:length(ys)){
+    y =ys[i]
+    if (y < 4){
+      cols[i] = sample(x=c(1,2,3), size=1, prob = c(0.2, 0.1, 0.7))
+    } else if (y < 7){
+      cols[i] = sample(x=c(1,2,3), size=1, prob = c(1/4, 0.5, 1/4))
+    } else {
+      cols[i] = sample(x=c(1,2,3), size=1, prob = c(0.6, 0.3, 0.1))
+    }
+  }
+  return(cols)
+}
+
+cols_train = make_cols(my_images$train$y)
 train_images_colored <- colorize(images=my_images$train$x, colors=cols_train)
 
-cols_test = sample(x=c(1,2,3),size=length(my_images$test$y), replace = TRUE)
+cols_test = make_cols(my_images$test$y)
 test_images_colored <- colorize(images=my_images$test$x, colors=cols_test) 
 
 
-# i=1
+# 
+i=3
 image(train_images_colored[i,,,cols_train[i]])
 
 
@@ -104,10 +133,10 @@ dgp <- function(n_obs, cols, labels) {
     
     ####### x2
     u2 = rlogis(n_obs, location =  0, scale = 1) 
-    a1 = 0.42
+    a1 = 0.6
     #u2 = h(x2|x1,B) = h_0(x2) + eta(B) + a1*x1 
     #h_0(x2) = 0.21 * x2 
-    etaB = (labels - 4) #
+    etaB = (labels - 4) * (-0.3)#
     x2 =  (u2 - etaB - a1*x1)/0.21
     
     #Orginal Data
@@ -136,9 +165,11 @@ test = dgp(n_obs=10000, cols = cols_test, labels = my_images$test$y)
 
 # compare to Colr for tabular part
 
-global_min = train$min
-global_max = train$max
+(global_min = train$min)
+(global_max = train$max)
 
+test$min
+test$max
 
 MA =  matrix(c(0, 'ls', 
                0,   0 ), nrow = 2, ncol = 2, byrow = TRUE)
@@ -158,6 +189,30 @@ tabular_out$shape
 # first CS, second LS, third part BP-coeffs
 tabular_model(train$df_orig)
 
+plot(train$df_orig$numpy()[,1], train$df_orig$numpy()[,2])
+library(tram)
+df.train = data.frame(train$df_orig$numpy())
+df.train$B = (my_images$train$y - 4.)
+
+boxplot(X2 ~ X1, df.train, notch = TRUE)
+boxplot(X2 ~ B, df.train, notch = TRUE)
+
+df.test = data.frame(test$df_orig$numpy())
+df.test$B = (my_images$test$y - 4.)
+
+boxplot(X2 ~ X1, df.test, notch = TRUE)
+boxplot(X2 ~ B, df.test, notch = TRUE)
+
+fit.train = Colr(X2 ~ X1 + B, df.train)
+confint(fit.train)
+-logLik(fit.train)/n_obs
+-logLik(fit.train, newdata = df.test)/n_obs
+
+fit.trainX1 = Colr(X1 ~ B, df.train)
+confint(fit.trainX1)
+
+
+
 ###### create a cnn model ####
 input_shape <- c(28, 28, 3)
 
@@ -172,16 +227,28 @@ conv2 <- layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = 'relu')
 pool2 <- layer_max_pooling_2d(pool_size = c(2, 2))(conv2)
 
 dropout2 <- layer_dropout(rate = 0.35)(pool2)
-
 flatten <- layer_flatten()(dropout2)
-
 dense1 <- layer_dense(units = 30, activation = 'relu')(flatten)
-dropout <- layer_dropout(rate = 0.35)(dense1)
 
-cnn_out <- layer_dense(units = 1, activation = 'linear')(dropout)
+
+
+#### OZ-Layer <---   TODO CHECK #####
+ORTHO = FALSE
+if (ORTHO){
+  oz <- reticulate::import_from_path("orthog")
+  ozlayer <- oz$Orthogonalization()
+  extract_columns_layer <- layer_lambda(f=function(x) x[, 1:2])
+  redinfo <- extract_columns_layer(tabular_model$input)
+  ortho = ozlayer(dense1, redinfo)
+} else {
+  print("---------- Ortho False ----------")
+  ortho = dense1
+}
+cnn_out <- layer_dense(units = 1, activation = 'linear')(ortho)
 
 # get shape batches, #Variables, 
 # since image impacts only x2, the first column should be zero
+# Depending on the #variables p, we need to repeat the tensor
 repeated_tensor <- layer_repeat_vector(n = 2)(cnn_out)
 tmp = k_reshape(k_constant(c(0,1)), shape=c(-1,2,1))
 cnn_tensor <- layer_multiply(repeated_tensor, tmp)
@@ -202,7 +269,7 @@ h_params = final_model(list(train$df_orig, train_images_colored ))
 h_params$shape
 # [batch, #variable, 1(CS) + 1(LS) + M(BP) + 1(CNN) ]
 
-# check that only third variable has an eta_B Shift (last h_params-dim)
+# check that only third variables p has an eta_B Shift (last h_params-dim)
 h_params[, ,9]
 
 
@@ -218,21 +285,18 @@ final_model$evaluate(x = list(train$df_orig, train_images_colored),
                      y=train$df_orig, batch_size = 7L)
 final_model
 
-BIS HIERHIN GEKOMMEN
-
 ####### Normal Training ####
-final_model
 if (file.exists(fn)){
   final_model$load_weights(fn)
 } else {
   # Initialize a data frame to store specific weights
-  ws <- data.frame(w12 = numeric(), w13 = numeric(), w23 = numeric())
+  ws <- data.frame(w12 = numeric())
   # Initialize lists to store loss history
   train_loss <- numeric()
   val_loss <- numeric()
   
   # Training loop
-  num_epochs <- 2
+  num_epochs <- 100
   for (e in 1:num_epochs) {
     print(paste("Epoch", e))
     # if (e < Inf) {
@@ -246,10 +310,10 @@ if (file.exists(fn)){
     # }
     
     
-    hist <- final_model$fit(x = list(train$df_orig, train_images), 
+    hist <- final_model$fit(x = list(train$df_orig, train_images_colored), 
                             y = train$df_orig, 
                             epochs = 1L, verbose = TRUE, 
-                            validation_data = list(list(test$df_orig, test_images), test$df_orig))
+                            validation_data = list(list(test$df_orig, test_images_colored), test$df_orig))
     
     # Append losses to history
     train_loss <- c(train_loss, hist$history$loss)
@@ -257,24 +321,22 @@ if (file.exists(fn)){
     
     # Extract specific weights
     w <- final_model$get_layer(name = "beta")$get_weights()[[1]]
-    ws <- rbind(ws, data.frame(w12 = w[1, 2], w13 = w[1, 3], w23 = w[2, 3]))
+    
+    ws <- rbind(ws, data.frame(w12 = w[1, 2]))
   }
   
   final_model$save_weights(paste0(fn, '_normal_', num_epochs, '.h5'))
   save.image(paste0(fn, '_normal_', num_epochs, '.RData'))
   #pdf(paste0('loss_',fn,'.pdf'))
   epochs = length(train_loss)
-  plot(1:length(train_loss), train_loss, type='l', main='Normal Training', ylim=c(-0.5, -0.4))
+  plot(1:length(train_loss), train_loss, type='l', main='Normal Training w/o othogonalization', ylim=c(-0.41, -0.3))
   lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
+  abline(v = 5, col = 'red')
   
-  plot(1:epochs, ws[,1], type='l', ylim=c(0,10), main='Normal Training')
-  lines(1:epochs, ws[,2], col='black')
-  lines(1:epochs, ws[,3], col='black')
-  abline(h=9, col='red')
-  abline(h=5, col='red')
-  abline(h=0.3, col='red', )
-  legend("topleft", legend = c("w12 5", "w13 2", "w23 0.3"), col = c("black", "red", "blue"), lty = 1:1, cex = 0.8)
-
+  plot(1:epochs, ws[,1], type='l', main='Normal Training w/o orthogonalization', ylim=c(0, 6))
+  abline(h = 0.6, col = 'red')
+  abline(v = 6, col = 'red')
+  abline(v = 5, col = 'red')
   
   #Save a pdf of the loss function containing fn using pdf()
   #dev.off()
@@ -287,10 +349,8 @@ len_theta
 final_model$get_layer(name = "beta")$get_weights() * final_model$get_layer(name = "beta")$mask
 param_model = final_model
 
-
-
-DER CODE WEITER UNTEN IST NICHT GETESTET 
-
+###### DER CODE WEITER UNTEN IST NICHT GETESTET  ######
+DER CODE WEITER UNTEN IST NICHT GETESTET
 
 # Check the derivatives of h w.r.t. x
 x <- tf$ones(shape = c(10L, 3L)) #B,P
