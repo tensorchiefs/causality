@@ -1028,6 +1028,11 @@ dag_loss = function (t_i, theta_tilde){
   return (-tf$reduce_mean(log_lik))#(-tf$reduce_mean(log_lik, axis=-1L))
 }
 
+# Define the function to calculate the logistic CDF
+logistic_cdf <- function(x) {
+  return(tf$math$reciprocal(tf$math$add(1, tf$math$exp(-x))))
+}
+
 struct_dag_loss = function (t_i, h_params){
   #t_i = train$df_orig
   k_min <- k_constant(global_min)
@@ -1038,29 +1043,75 @@ struct_dag_loss = function (t_i, h_params){
   # the 2+|X|+1 to the end is H_I
   h_cs <- h_params[,,1, drop = FALSE]
   h_ls <- h_params[,,2, drop = FALSE]
-  theta_tilde <- h_params[,,3:dim(h_params)[3], drop = FALSE]
-  #CI 
-  theta = to_theta3(theta_tilde)
-  h_I = h_dag_extra(t_i, theta, k_min, k_max) 
   #LS
   h_LS = tf$squeeze(h_ls, axis=-1L)#tf$einsum('bx,bxx->bx', t_i, beta)
   #CS
   h_CS = tf$squeeze(h_cs, axis=-1L)
+  theta_tilde <- h_params[,,3:dim(h_params)[3], drop = FALSE]
+  #Thetas for intercept
+  theta = to_theta3(theta_tilde)
   
-  h = h_I + h_LS + h_CS
+  if (is.null(data_type)){ #Defaulting to all continuous 
+    cont_dims = 1:dim(theta_tilde)[2]
+  } else{ 
+    cont_dims = which(data_type == 'c')
+    cont_ord = which(data_type == 'o')
+  }
+  if (len_theta == -1){ 
+    len_theta = dim(theta_tilde)[3]
+  }
   
-  #Compute terms for change of variable formula
-  log_latent_density = -h - 2 * tf$math$softplus(-h) #log of logistic density at h
-  ## h' dh/dtarget is 0 for all shift terms
-  log_hdash = tf$math$log(tf$math$abs(h_dag_dash_extra(t_i, theta, k_min, k_max))) - 
-    tf$math$log(k_max - k_min)  #Chain rule! See Hathorn page 12 
+  NLL = 0
+  ### Continiuous dimensions
+  #### At least one continuous dimension exits
+  if (length(cont_dims) != 0){
+    h_I = h_dag_extra(t_i[,cont_dims, drop=FALSE], theta[,cont_dims,1:len_theta,drop=FALSE], k_min[cont_dims], k_max[cont_dims]) 
+    h = h_I + h_LS[,cont_dims, drop=FALSE] + h_CS[,cont_dims, drop=FALSE]
+    
+    #Compute terms for change of variable formula
+    log_latent_density = -h - 2 * tf$math$softplus(-h) #log of logistic density at h
+    ## h' dh/dtarget is 0 for all shift terms
+    log_hdash = tf$math$log(tf$math$abs(
+      h_dag_dash_extra(t_i[,cont_dims, drop=FALSE], theta[,cont_dims,1:len_theta,drop=FALSE], k_min[cont_dims], k_max[cont_dims]))
+      ) - 
+      tf$math$log(k_max[cont_dims] - k_min[cont_dims])  #Chain rule! See Hathorn page 12 
+    
+    NLL = NLL - tf$reduce_mean(log_latent_density + log_hdash)
+  }
   
-  log_lik = log_latent_density + log_hdash
+  ### Ordinal dimensions
+  if (length(cont_ord) != 0){
+    B = tf$shape(t_i)[1]
+    for (col in cont_ord){
+      nol = tf$cast(k_max[col] - 1L, tf$int32) # Number of cut-points in respective dimension
+      theta_ord = theta[,col,1:nol,drop=TRUE] # Intercept
+
+
+      h = theta_ord + h_LS[,col, drop=FALSE] + h_CS[,col, drop=FALSE]
+      # putting -Inf and +Inf to the left and right of the cutpoints
+      neg_inf = tf$fill(c(B,1L), -Inf)
+      pos_inf = tf$fill(c(B,1L), +Inf)
+      h_with_inf = tf$concat(list(neg_inf, h, pos_inf), axis=-1L)
+      logistic_cdf_values = logistic_cdf(h_with_inf)
+      #cdf_diffs <- tf$subtract(logistic_cdf_values[, 2:ncol(logistic_cdf_values)], logistic_cdf_values[, 1:(ncol(logistic_cdf_values) - 1)])
+      cdf_diffs <- tf$subtract(logistic_cdf_values[, 2:tf$shape(logistic_cdf_values)[2]], logistic_cdf_values[, 1:(tf$shape(logistic_cdf_values)[2] - 1)])
+      # Picking the observed cdf_diff entry
+      class_indices <- tf$cast(t_i[, col] - 1, tf$int32)  # Convert to zero-based index
+      # Create batch indices to pair with class indices
+      batch_indices <- tf$range(tf$shape(class_indices)[1])
+      # Combine batch_indices and class_indices into pairs of indices
+      gather_indices <- tf$stack(list(batch_indices, class_indices), axis=1)
+      cdf_diff_picked <- tf$gather_nd(cdf_diffs, gather_indices)
+      # Gather the corresponding values from cdf_diffs
+      NLL = NLL -tf$reduce_mean(tf$math$log(cdf_diff_picked))
+    }
+  }
+  
   ### DEBUG 
   #if (sum(is.infinite(log_lik$numpy())) > 0){
   #  print("Hall")
   #}
-  return (-tf$reduce_mean(log_lik))
+  return (NLL)
 }
 
 # Old version of the struct_dag_loss used until 21 May 24 with Scalar Data

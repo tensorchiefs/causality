@@ -164,6 +164,22 @@ sample_from_target_MAF_struct = function(param_model, node, parents){
   h_LS = tf$squeeze(h_ls, axis=-1L)
   h_CS = tf$squeeze(h_cs, axis=-1L)
   
+  if(node %in% which(data_type == 'o')) {
+    B = tf$shape(h_cs)[1]
+    nol = tf$cast(k_max[node] - 1L, tf$int32) # Number of cut-points in respective dimension
+    theta_ord = theta[,node,1:nol,drop=TRUE] # Intercept
+    h = theta_ord + h_LS[,node, drop=FALSE] + h_CS[,node, drop=FALSE]
+    neg_inf = tf$fill(c(B,1L), -Inf)
+    pos_inf = tf$fill(c(B,1L), +Inf)
+    h_with_inf = tf$concat(list(neg_inf, h, pos_inf), axis=-1L)
+    logistic_cdf_values = logistic_cdf(h_with_inf)
+    #cdf_diffs <- tf$subtract(logistic_cdf_values[, 2:ncol(logistic_cdf_values)], logistic_cdf_values[, 1:(ncol(logistic_cdf_values) - 1)])
+    cdf_diffs <- tf$subtract(logistic_cdf_values[, 2:tf$shape(logistic_cdf_values)[2]], logistic_cdf_values[, 1:(tf$shape(logistic_cdf_values)[2] - 1)])
+    samples <- tf$random$categorical(logits = tf$math$log(cdf_diffs), num_samples = 1L)
+    samples = tf$cast(samples * 1.0 + 1, dtype='float32')
+    return(samples)
+    # Picking the observed cdf_diff entry
+  } else {
   #h_0_old =  tf$expand_dims(h_dag(L_START, theta), axis=-1L)
   #h_1 = tf$expand_dims(h_dag(R_START, theta), axis=-1L)
   h_0 =  h_LS + h_CS + h_dag(L_START, theta) #tf$expand_dims(h_LS + h_CS + h_dag(L_START, theta), axis=-1L)
@@ -218,6 +234,7 @@ sample_from_target_MAF_struct = function(param_model, node, parents){
                           target_sample)
   cat(paste0('sample_from_target Fraction of extrapolated samples > 1 : %f \n', tf$reduce_mean(tf$cast(mask, tf$float32))))
   return(target_sample[,node, drop=FALSE])
+  }
 }
 
 
