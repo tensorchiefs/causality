@@ -18,9 +18,30 @@ source('summerof24/utils_tf.R')
 library(tfprobability)
 source('summerof24/utils_tfp.R')
 
+##### Flavor of experiment ######
+### Different effects of x2 --> x3
+f = function(x) -0.3 * x 
+f = function(x) 2 * x**3 + x
 
-fn = 'triangle_mixed.h5'
-##### TEMP
+MA =  matrix(c(
+  0, 'ls', 'ls', 
+  0,    0, 'cs', 
+  0,    0,   0), nrow = 3, ncol = 3, byrow = TRUE)
+
+hidden_features_I = c(2,25,25,2)
+hidden_features_CS = c(2,25,25,2)
+len_theta = 20 # Number of coefficients of the Bernstein polynomials
+
+num_epochs <- 205
+
+fn = 'triangle_mixed_DGPLinear_ModelCSDeeper.h5'
+fn = 'triangle_mixed_DGPLinear_ModelLinear.h5'
+fn = 'triangle_mixed_DGPSin_ModelCS.h5'
+      
+xs = seq(-1,1,0.1)
+plot(xs, f(xs))
+
+##### DGP ########
 dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     #n_obs = 1e5 n_obs = 10
     #Sample X_1 from GMM with 2 components
@@ -61,7 +82,7 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
       
       h = matrix(, nrow=n_obs, ncol=3)
       for (i in 1:n_obs){
-        h[i,] = theta_k + 0.2 * X_1[i] - 0.3 * X_2[i]
+        h[i,] = theta_k + 0.2 * X_1[i] + f(X_2[i]) #- 0.3 * X_2[i]
       }
       
       U3 = rlogis(n_obs)
@@ -122,11 +143,6 @@ fit.orig = Polr(x3 ~ x1 + x2,train$df_R)
 summary(fit.orig)
 confint(fit.orig) #Original 
 
-MA =  matrix(c(0, 'ls', 'ls', 0,0, 'ls',0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
-
-hidden_features_I = c(2,2)
-hidden_features_CS = c(2,2)
-len_theta = 20 # Number of coefficients of the Bernstein polynomials
 len_theta_max = len_theta
 for (i in 1:nrow(MA)){ #Maximum number of coefficients (BS and Levels - 1 for the ordinal)
   if (train$type[i] == 'o'){
@@ -196,8 +212,11 @@ param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
 
 
 ##### Training ####
-if (file.exists(fn)){
-  param_model$load_weights(fn)
+fnh5 = paste0(fn, num_epochs, '.h5')
+fnRdata = paste0(fn, num_epochs, '.RData')
+if (file.exists(fnh5)){
+  param_model$load_weights(fnh5)
+  #load(fnRdata) #Loading of the workspace causes trouble e.g. param_model is zero
 } else {
   if (FALSE){ ### Full Training w/o diagnostics
     hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 200L,verbose = TRUE)
@@ -210,7 +229,6 @@ if (file.exists(fn)){
     val_loss <- numeric()
     
     # Training loop
-    num_epochs <- 200
     for (e in 1:num_epochs) {
       print(paste("Epoch", e))
       hist <- param_model$fit(x = train$df_orig, y = train$df_orig, 
@@ -227,8 +245,8 @@ if (file.exists(fn)){
       ws <- rbind(ws, data.frame(w12 = w[1, 2], w13 = w[1, 3], w23 = w[2, 3]))
     }
     # Save the model
-    param_model$save_weights(paste0(fn, '_normal_', num_epochs, '.h5'))
-    save.image(paste0(fn, '_normal_', num_epochs, '.RData'))
+    param_model$save_weights(fnh5)
+    save.image(fnRdata)
     #pdf(paste0('loss_',fn,'.pdf'))
     epochs = length(train_loss)
     plot(1:length(train_loss), train_loss, type='l', ylim=c(1,1.2), main='Normal Training')
@@ -255,9 +273,8 @@ if (file.exists(fn)){
       labs(title='Coefficients (triangle_structured_mixed.R)', x='Epoch', y='Coefficients') +
       theme_minimal() +
       theme(legend.title = element_blank())  # Removes the legend title
-    
-    
   }
+  
 }
 param_model$evaluate(x = train$df_orig, y=train$df_scaled)
 fn
@@ -403,12 +420,102 @@ lines(density(sample_dag_07), col='red', lw=2)
 m_x2_do_x10.7 = median(sample_dag_07)
 m_x2_do_x10.7 - m_x2_do_x10.2
 
+###### Comparison of estimated f(x2) vs TRUE f(x2) #######
+shift1 = shift = xs = seq(-2.5,2.5,0.1)
+for (i in 1:length(xs)){
+  #i = 1
+  x = xs[i]
+  X = tf$constant(c(0.5, x, 3), shape=c(1L,3L))
+  shift[i] = param_model(X)[1,3,1]$numpy() #1=CS Term
+  
+  X = tf$constant(c(x, 0.5, 3), shape=c(1L,3L)) 
+  shift1[i] = param_model(X)[1,3,2]$numpy() #1=LS Term
+}
+
+par(mfrow=c(2,2))
+plot(xs, shift, main='DGP=CS | Model = CS CS-Term', xlab='x2')
+plot(xs,f(xs), xlab='x2', main='DGP')
 
 
+plot(xs, shift1, main='DGP=CS | Model = CS LS-Term', xlab='x1')
+lines(xs,0.2*xs)
+
+abline(lm(shift1 ~ xs))
+lm(shift1 ~ xs)
+
+par(mfrow=c(1,1))
+#
+lm(shift1 ~ xs)
+param_model$get_layer(name = "beta")$get_weights()[[1]]
 
 
+####### Compplete transformation Function #######
+### Copied from structured DAG Loss
+t_i = train$df_orig
+k_min <- k_constant(global_min)
+k_max <- k_constant(global_max)
 
+# from the last dimension of h_params the first entriy is h_cs1
+# the second to |X|+1 are the LS
+# the 2+|X|+1 to the end is H_I
+h_cs <- h_params[,,1, drop = FALSE]
+h_ls <- h_params[,,2, drop = FALSE]
+#LS
+h_LS = tf$squeeze(h_ls, axis=-1L)#tf$einsum('bx,bxx->bx', t_i, beta)
+#CS
+h_CS = tf$squeeze(h_cs, axis=-1L)
 
+theta_tilde <- h_params[,,3:dim(h_params)[3], drop = FALSE]
+theta = to_theta3(theta_tilde)
+cont_dims = which(data_type == 'c') #1 2
+cont_ord = which(data_type == 'o') #3
+
+### Continiuous dimensions
+#### At least one continuous dimension exits
+h_I = h_dag_extra(t_i[,cont_dims, drop=FALSE], theta[,cont_dims,1:len_theta,drop=FALSE], k_min[cont_dims], k_max[cont_dims]) 
+
+h_12 = h_I + h_LS[,cont_dims, drop=FALSE] + h_CS[,cont_dims, drop=FALSE]
+
+### Ordingal Dimensions
+B = tf$shape(t_i)[1]
+col = 3
+nol = tf$cast(k_max[col] - 1L, tf$int32) # Number of cut-points in respective dimension
+theta_ord = theta[,col,1:nol,drop=TRUE] # Intercept
+h_3 = theta_ord + h_LS[,col, drop=FALSE] + h_CS[,col, drop=FALSE]
+
+####### DGP Transformations #######
+X_1 = t_i[,1]$numpy()
+X_2 = t_i[,2]$numpy()
+h2_DGP = 5 *X_2 + 2 * X_1
+plot(h2_DGP[1:2000], h_12[1:2000,2]$numpy())
+abline(0,1,col='red')
+
+h2_DGP_I = 5*X_2
+h2_M_I = h_I[,2]
+
+plot(h2_DGP_I, h2_M_I)
+abline(0,1,col='red')
+
+h_3 #Model
+
+##### DGP 
+theta_k = c(-2, 0.42, 1.02)
+n_obs = B$numpy()
+h_3_DPG = matrix(, nrow=n_obs, ncol=3)
+for (i in 1:n_obs){
+  h_3_DPG[i,] = theta_k + 0.2 * X_1[i] + f(X_2[i]) #- 0.3 * X_2[i]
+}
+
+plot(h_3_DPG[1:2000,3], h_3[1:2000,3]$numpy())
+abline(0,1,col='green')
+
+#LS
+plot(-0.2*X_1, h_LS[,3]$numpy())
+abline(0,1,col='green')
+
+#LS
+plot(f(X_2), h_CS[,3]$numpy())
+abline(0,1,col='green')
 
 
 

@@ -163,6 +163,8 @@ sample_from_target_MAF_struct = function(param_model, node, parents){
   theta = to_theta3(theta_tilde)
   h_LS = tf$squeeze(h_ls, axis=-1L)
   h_CS = tf$squeeze(h_cs, axis=-1L)
+  k_min <- k_constant(global_min)
+  k_max <- k_constant(global_max)
   
   if(node %in% which(data_type == 'o')) {
     B = tf$shape(h_cs)[1]
@@ -192,8 +194,6 @@ sample_from_target_MAF_struct = function(param_model, node, parents){
     latent_sample = sample_standard_logistic(parents$shape)
   }
   #ddd = target_sample$numpy() #hist(ddd[,1],100)
-  k_min <- k_constant(global_min)
-  k_max <- k_constant(global_max)
   
   #t_i = tf$ones_like(h_LS) *0.5
   #h_dag_extra_struc(t_i, theta, shift = h_LS + h_CS)
