@@ -77,7 +77,7 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
 train = dgp(4000)
 (global_min = train$min)
 (global_max = train$max)
-
+data_type = c('c','c','c')
 
 #### Fitting Tram ######
 df = data.frame(train$df_orig$numpy())
@@ -207,8 +207,7 @@ fit.1 = Colr(X1~1,df)
 plot(fit.1, which = 'baseline only')
 lines(Xs[,1], h_I[,1], col='red', lty=2, lwd=3)
 rug(train$df_orig$numpy()[,1], col='blue')
-transformed_values <- predict(fit.1, newdata = seq(0, 1, 0.01))
-
+#transformed_values <- predict(fit.1, newdata = seq(0, 1, 0.01))
 
 df = data.frame(train$df_orig$numpy())
 fit.21 = Colr(X2~X1,df)
@@ -280,7 +279,6 @@ s2_colr = rep(NA, length(ddd))
 for (i in 1:length(ddd)){
   s2_colr[i] = as.numeric(ddd[[i]]) #<--TODO somethimes 
 }
-
 if(sum(is.na(s2_colr)) > 0){
   stop("Pechgehabt mit Colr, viel Glück und nochmals!")
 }

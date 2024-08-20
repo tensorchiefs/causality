@@ -446,9 +446,10 @@ lines(x2s, x2_dense, type = 'l', col='blue', lw=2)
 # }
 
 s_dag = do_dag_struct(param_model, train$A, doX=c(0.2, NA, NA))
-hist(dx0.2$df_orig$numpy()[,2], freq=FALSE, 50, main='X2 | Do(X1=0.2)', xlab='samples', 
+i = 2
+hist(ds, freq=FALSE, 50, main='X2 | Do(X1=0.2)', xlab='samples', 
      sub='Histogram from DGP with do. red:TRAM_DAG')
-sample_dag_0.2 = s_dag[,2]$numpy()
+sample_dag_0.2 = s_dag[,i]$numpy()
 lines(density(sample_dag_0.2), col='red', lw=2)
 m_x2_do_x10.2 = median(sample_dag_0.2)
 

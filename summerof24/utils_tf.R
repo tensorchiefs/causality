@@ -1051,8 +1051,9 @@ struct_dag_loss = function (t_i, h_params){
   #Thetas for intercept
   theta = to_theta3(theta_tilde)
   
-  if (is.null(data_type)){ #Defaulting to all continuous 
+  if (!exists('data_type')){ #Defaulting to all continuous 
     cont_dims = 1:dim(theta_tilde)[2]
+    cont_ord = c()
   } else{ 
     cont_dims = which(data_type == 'c')
     cont_ord = which(data_type == 'o')

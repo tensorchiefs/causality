@@ -10,7 +10,7 @@ if (length(args) == 0) {
 }
 F32 <- as.numeric(args[1])
 M32 <- args[2]
-print(paste("FS:", F32, "M32:", M32))
+print(paste("F32:", F32, "M32:", M32))
 
 
 #### A mixture of discrete and continuous variables ####
@@ -31,16 +31,16 @@ source('summerof24/utils_tfp.R')
 ##### Flavor of experiment ######
 
 #### Saving the current version of the script into runtime
-DIR = 'summerof24/runs/triangle_structured_mixed/run_small_net'
+DIR = 'summerof24/runs/triangle_structured_continous/run1'
 if (!dir.exists(DIR)) {
   dir.create(DIR, recursive = TRUE)
 }
 # Copy this file to the directory DIR
-file.copy('summerof24/triangle_structured_mixed.R', file.path(DIR, 'triangle_structured_mixed.R'), overwrite=TRUE)
+file.copy('summerof24/triangle_structured_continous.R', file.path(DIR, 'triangle_structured_continous.R'), overwrite=TRUE)
 
 num_epochs <- 500
 len_theta = 20 # Number of coefficients of the Bernstein polynomials
-hidden_features_I = c(2,2,2,2) 
+hidden_features_I = c(2,2,2,2)    #hidden_features_CS=hidden_features_I = c(2,25,25,2)
 hidden_features_CS = c(2,2,2,2)
 
 if (F32 == 1){
@@ -110,37 +110,25 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     #hist(X_2)
     #ds = seq(-5,5,0.1)
     #plot(ds, dlogis(ds))
-    
     if (is.na(doX[3])){
-      # x3 is an ordinal variable with K = 4 levels x3_1, x3_2, x3_3, x3_4
-      # h(x3 | x1, x2) = h0 + gamma_1 * x1 + gamma_2 * x2
-      # h0(x3_1) = theta_1, h0(x_3_2) =  theta_2, h0(x_3_3) = theta_3 
-      theta_k = c(-2, 0.42, 1.02)
-      
-      h = matrix(, nrow=n_obs, ncol=3)
-      for (i in 1:n_obs){
-        h[i,] = theta_k + 0.2 * X_1[i] + f(X_2[i]) #- 0.3 * X_2[i]
-      }
-      
-      U3 = rlogis(n_obs)
-      # chooses the correct X value if U3 is smaller than -2 that is level one if it's between -2 and 0.42 it's level two answer on
-      x3 = rep(1, n_obs)
-      x3[U3 > h[,1]] = 2
-      x3[U3 > h[,2]] = 3
-      x3[U3 > h[,3]] = 4
-      x3 = ordered(x3, levels=1:4)
+      U3 = runif(n_obs)
+      x_3_dash = qlogis(U3)
+      #x_3_dash = h_0_3(x_3) + gamma_1 * X_1 + gamma_2 * X_2
+      #x_3_dash = 0.63 * x_3 -0.2 * X_1 + 1.3 * X_2
+      X_3 = (x_3_dash + 0.2 * X_1 + f(X_2))/0.63
     } else{
-      x3 = rep(doX[3], n_obs)
+      X_3 = rep(doX[3], n_obs)
     }
+    
    
     #hist(X_3)
     A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
-    dat.orig =  data.frame(x1 = X_1, x2 = X_2, x3 = x3)
+    dat.orig =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3)
     dat.tf = tf$constant(as.matrix(dat.orig), dtype = 'float32')
     
     q1 = quantile(dat.orig[,1], probs = c(0.05, 0.95)) 
     q2 = quantile(dat.orig[,2], probs = c(0.05, 0.95))
-    q3 = c(1, 4) #No Quantiles for ordinal data
+    q3 = quantile(dat.orig[,3], probs = c(0.05, 0.95))
     
     
     return(list(
@@ -150,7 +138,7 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
       #max =  tf$reduce_max(dat.tf, axis=0L),
       min = tf$constant(c(q1[1], q2[1], q3[1]), dtype = 'float32'),
       max = tf$constant(c(q1[2], q2[2], q3[2]), dtype = 'float32'),
-      type = c('c', 'c', 'o'),
+      type = c('c', 'c', 'c'),
       A=A))
 } 
 
@@ -176,7 +164,7 @@ summary(fit.orig)
 confint(fit.orig) #Original 
 
 # Fitting Tram
-fit.orig = Polr(x3 ~ x1 + x2,train$df_R)
+fit.orig = Colr(x3 ~ x1 + x2,train$df_R)
 summary(fit.orig)
 confint(fit.orig) #Original 
 
@@ -301,7 +289,7 @@ plot(1:length(train_loss), train_loss, type='l', main='Normal Training (green is
 lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
 
 # Last 50
-diff = max(epochs - 100,0)
+diff = max(epochs - 50,1)
 plot(diff:epochs, val_loss[diff:epochs], type = 'l', col = 'green', main='Last 50 epochs')
 lines(diff:epochs, train_loss[diff:epochs], type='l')
 
@@ -353,17 +341,13 @@ plot(fit.21, which = 'baseline only', newdata = temp, lwd=2, col='blue',
 lines(Xs[,2], h_I[,2], col='red', lty=2, lwd=5)
 rug(train$df_orig$numpy()[,2], col='blue')
 
-fit.312 = Polr(x3 ~ x1 + x2,train$df_R)
+fit.312 = Colr(X3 ~ X1 + X2,df)
 temp = model.frame(fit.312)[1:2, -1, drop=FALSE] #WTF!
 
-plot(fit.312, which = 'baseline only', newdata = temp, col='blue', 
-     main='h_I(X3) Polr (blue) our Model (red)', cex.main=0.8)
+plot(fit.312, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
+     main='h_I(X3) Colr and Our Model', cex.main=0.8)
+lines(Xs[,3], h_I[,3], col='red', lty=2, lwd=5)
 rug(train$df_orig$numpy()[,3], col='blue')
-theta_tilde <- h_params[,,3:dim(h_params)[3], drop = FALSE]
-#Thetas for intercept
-theta = to_theta3(theta_tilde)
-theta_base = theta[1,3,1:3] #Are all equal for the batch
-points(1:3, theta_base, col='red', pch='+', cex=2)
 
 
 if (FALSE){
@@ -383,16 +367,9 @@ if (FALSE){
 
 ##### Checking observational distribution ####
 s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 5000)
-
-plot(table(train$df_R[,3])/sum(table(train$df_R[,3])), ylab='Probability ', 
-     main='Black = Observations, Red samples from TRAM-DAG',
-     xlab='X3')
-table(train$df_R[,3])/sum(table(train$df_R[,3]))
-points(as.numeric(table(s[,3]$numpy()))/5000, col='red', lty=2)
-table(s[,3]$numpy())/5000
-
-par(mfrow=c(1,2))
-for (i in 1:2){
+par(mfrow=c(1,3))
+for (i in 1:3){
+  d = s[,i]$numpy()
   hist(train$df_orig$numpy()[,i], freq=FALSE, 100,main=paste0("X",i, " red: ours, black: data"), xlab='samples')
   #hist(train$df_orig$numpy()[,i], freq=FALSE, 100,main=paste0("X_",i))
   lines(density(s[,i]$numpy()), col='red')
@@ -453,23 +430,12 @@ lines(density(sample_dag_0.2), col='red', lw=2)
 m_x2_do_x10.2 = median(sample_dag_0.2)
 
 
-i = 3 
-d = dx0.2$df_orig$numpy()[,i]
-plot(table(d)/length(d), ylab='Probability ', 
-     main='X3 | do(X1=0.2)',
-     xlab='X3', ylim=c(0,0.6),  sub='Black DGP with do. red:TRAM_DAG')
-points(as.numeric(table(s_dag[,3]$numpy()))/nrow(s_dag), col='red', lty=2)
-
-
-s_dag = do_dag_struct(param_model, train$A, doX=c(0.7, NA, NA))
-i = 2
-ds = dx7$df_orig$numpy()[,i]
-hist(ds, freq=FALSE, 50, main='X2 | Do(X1=0.7)', xlab='samples', 
+s_dag = do_dag_struct(param_model, train$A, doX=c(0.2, NA, NA))
+hist(dx0.2$df_orig$numpy()[,3], freq=FALSE, 50, main='X3 | Do(X1=0.2)', xlab='samples', 
      sub='Histogram from DGP with do. red:TRAM_DAG')
-sample_dag_07 = s_dag[,i]$numpy()
-lines(density(sample_dag_07), col='red', lw=2)
-m_x2_do_x10.7 = median(sample_dag_07)
-m_x2_do_x10.7 - m_x2_do_x10.2
+sample_dag_0.2 = s_dag[,3]$numpy()
+lines(density(sample_dag_0.2), col='red', lw=2)
+
 
 ###### Comparison of estimated f(x2) vs TRUE f(x2) #######
 shift_12 = shift_23 = shift1 = cs_23 = xs = seq(-1,1,length.out=41)

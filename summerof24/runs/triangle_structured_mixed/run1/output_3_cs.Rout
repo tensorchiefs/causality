@@ -1,0 +1,862 @@
+
+R version 4.2.3 (2023-03-15) -- "Shortstop Beagle"
+Copyright (C) 2023 The R Foundation for Statistical Computing
+Platform: aarch64-apple-darwin20 (64-bit)
+
+R é um software livre e vem sem GARANTIA ALGUMA.
+Você pode redistribuí-lo sob certas circunstâncias.
+Digite 'license()' ou 'licence()' para detalhes de distribuição.
+
+R é um projeto colaborativo com muitos contribuidores.
+Digite 'contributors()' para obter mais informações e
+'citation()' para saber como citar o R ou pacotes do R em publicações.
+
+Digite 'demo()' para demonstrações, 'help()' para o sistema on-line de ajuda,
+ou 'help.start()' para abrir o sistema de ajuda em HTML no seu navegador.
+Digite 'q()' para sair do R.
+
+> ##### Oliver's MAC ####
+> reticulate::use_python("/Users/oli/miniforge3/envs/r-tensorflow/bin/python3.8", required = TRUE)
+> library(reticulate)
+> reticulate::py_config()
+python:         /Users/oli/miniforge3/envs/r-tensorflow/bin/python3.8
+libpython:      /Users/oli/miniforge3/envs/r-tensorflow/lib/libpython3.8.dylib
+pythonhome:     /Users/oli/miniforge3/envs/r-tensorflow:/Users/oli/miniforge3/envs/r-tensorflow
+version:        3.8.18 (default, Sep 11 2023, 08:17:16)  [Clang 14.0.6 ]
+numpy:          /Users/oli/miniforge3/envs/r-tensorflow/lib/python3.8/site-packages/numpy
+numpy_version:  1.24.3
+
+NOTE: Python version was forced by use_python() function
+> 
+> # Get command-line arguments
+> args <- commandArgs(trailingOnly = TRUE)
+> if (length(args) == 0) {
++   args <- c(1, 'ls')
++ }
+> F32 <- as.numeric(args[1])
+> M32 <- args[2]
+> print(paste("FS:", F32, "M32:", M32))
+[1] "FS: 3 M32: cs"
+> 
+> 
+> #### A mixture of discrete and continuous variables ####
+> library(tensorflow)
+> library(keras)
+> library(mlt)
+Carregando pacotes exigidos: basefun
+Carregando pacotes exigidos: variables
+> library(tram)
+> library(MASS)
+> library(tensorflow)
+> library(keras)
+> library(tidyverse)
+── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.1.1     ✔ readr     2.1.4
+✔ forcats   1.0.0     ✔ stringr   1.5.0
+✔ ggplot2   3.5.1     ✔ tibble    3.2.1
+✔ lubridate 1.9.2     ✔ tidyr     1.3.0
+✔ purrr     1.0.1     
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::desc()   masks variables::desc()
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+✖ dplyr::select() masks MASS::select()
+✖ ggplot2::unit() masks variables::unit()
+ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+> source('summerof24/utils_tf.R')
+
+Attaching package: ‘grid’
+
+The following object is masked from ‘package:variables’:
+
+    unit
+
+> 
+> #### For TFP
+> library(tfprobability)
+> source('summerof24/utils_tfp.R')
+> 
+> ##### Flavor of experiment ######
+> 
+> #### Saving the current version of the script into runtime
+> DIR = 'summerof24/runs/triangle_structured_mixed/run1'
+> if (!dir.exists(DIR)) {
++   dir.create(DIR, recursive = TRUE)
++ }
+> # Copy this file to the directory DIR
+> file.copy('summerof24/triangle_structured_mixed.R', file.path(DIR, 'triangle_structured_mixed.R'))
+[1] FALSE
+> 
+> num_epochs <- 500
+> len_theta = 20 # Number of coefficients of the Bernstein polynomials
+> hidden_features_I = c(2,25,25,2) 
+> hidden_features_CS = c(2,25,25,2)
+> 
+> if (F32 == 1){
++   FUN_NAME = 'DPGLinear'
++   f <- function(x) -0.3 * x
++ } else if (F32 == 2){
++   f = function(x) 2 * x**3 + x
++   FUN_NAME = 'DPG2x3+x'
++ } else if (F32 == 3){
++   f = function(x) 0.5*exp(x)
++   FUN_NAME = 'DPG0.5exp'
++ }
+> 
+> if (M32 == 'ls') {
++   MA =  matrix(c(
++     0, 'ls', 'ls', 
++     0,    0, 'ls', 
++     0,    0,   0), nrow = 3, ncol = 3, byrow = TRUE)
++   MODEL_NAME = 'ModelLS'
++ } else{
++   MA =  matrix(c(
++     0, 'ls', 'ls', 
++     0,    0, 'cs', 
++     0,    0,   0), nrow = 3, ncol = 3, byrow = TRUE)
++   MODEL_NAME = 'ModelCS'
++ }
+> 
+> 
+> # fn = 'triangle_mixed_DGPLinear_ModelLinear.h5'
+> # fn = 'triangle_mixed_DGPSin_ModelCS.h5'
+> fn = file.path(DIR, paste0('triangle_mixed_', FUN_NAME, '_', MODEL_NAME))
+> print(paste0("Starting experiment ", fn))
+[1] "Starting experiment summerof24/runs/triangle_structured_mixed/run1/triangle_mixed_DPG0.5exp_ModelCS"
+>    
+> xs = seq(-1,1,0.1)
+> 
+> plot(xs, f(xs), sub=fn, xlab='x2', ylab='f(x2)', main='DGP influence of x2 on x3')
+> 
+> ##### DGP ########
+> dgp <- function(n_obs, doX=c(NA, NA, NA)) {
++     #n_obs = 1e5 n_obs = 10
++     #Sample X_1 from GMM with 2 components
++     if (is.na(doX[1])){
++       X_1_A = rnorm(n_obs, 0.25, 0.1)
++       X_1_B = rnorm(n_obs, 0.73, 0.05)
++       X_1 = ifelse(sample(1:2, replace = TRUE, size = n_obs) == 1, X_1_A, X_1_B)
++     } else{
++       X_1 = rep(doX[1], n_obs)
++     }
++     #hist(X_1)
++     
++     # Sampling according to colr
++     if (is.na(doX[2])){
++       U2 = runif(n_obs)
++       x_2_dash = qlogis(U2)
++       #x_2_dash = h_0(x_2) + beta * X_1
++       #x_2_dash = 0.42 * x_2 + 2 * X_1
++       X_2 = 1/0.42 * (x_2_dash - 2 * X_1)
++       X_2 = 1/5. * (x_2_dash - 0.4 * X_1) # 0.39450
++       X_2 = 1/5. * (x_2_dash - 1.2 * X_1) 
++       X_2 = 1/5. * (x_2_dash - 2 * X_1)  # 
++       
++       
++     } else{
++       X_2 = rep(doX[2], n_obs)
++     }
++     
++     #hist(X_2)
++     #ds = seq(-5,5,0.1)
++     #plot(ds, dlogis(ds))
++     
++     if (is.na(doX[3])){
++       # x3 is an ordinal variable with K = 4 levels x3_1, x3_2, x3_3, x3_4
++       # h(x3 | x1, x2) = h0 + gamma_1 * x1 + gamma_2 * x2
++       # h0(x3_1) = theta_1, h0(x_3_2) =  theta_2, h0(x_3_3) = theta_3 
++       theta_k = c(-2, 0.42, 1.02)
++       
++       h = matrix(, nrow=n_obs, ncol=3)
++       for (i in 1:n_obs){
++         h[i,] = theta_k + 0.2 * X_1[i] + f(X_2[i]) #- 0.3 * X_2[i]
++       }
++       
++       U3 = rlogis(n_obs)
++       # chooses the correct X value if U3 is smaller than -2 that is level one if it's between -2 and 0.42 it's level two answer on
++       x3 = rep(1, n_obs)
++       x3[U3 > h[,1]] = 2
++       x3[U3 > h[,2]] = 3
++       x3[U3 > h[,3]] = 4
++       x3 = ordered(x3, levels=1:4)
++     } else{
++       x3 = rep(doX[3], n_obs)
++     }
++    
++     #hist(X_3)
++     A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
++     dat.orig =  data.frame(x1 = X_1, x2 = X_2, x3 = x3)
++     dat.tf = tf$constant(as.matrix(dat.orig), dtype = 'float32')
++     
++     q1 = quantile(dat.orig[,1], probs = c(0.05, 0.95)) 
++     q2 = quantile(dat.orig[,2], probs = c(0.05, 0.95))
++     q3 = c(1, 4) #No Quantiles for ordinal data
++     
++     
++     return(list(
++       df_orig=dat.tf, 
++       df_R = dat.orig,
++       #min =  tf$reduce_min(dat.tf, axis=0L),
++       #max =  tf$reduce_max(dat.tf, axis=0L),
++       min = tf$constant(c(q1[1], q2[1], q3[1]), dtype = 'float32'),
++       max = tf$constant(c(q1[2], q2[2], q3[2]), dtype = 'float32'),
++       type = c('c', 'c', 'o'),
++       A=A))
++ } 
+> 
+> train = dgp(40000)
+> test  = dgp(10000)
+> (global_min = train$min)
+tf.Tensor([ 0.1232708 -0.8116584  1.       ], shape=(3), dtype=float32)
+> (global_max = train$max)
+tf.Tensor([0.7938316  0.41831034 4.        ], shape=(3), dtype=float32)
+> data_type = train$type
+> 
+> 
+> 
+> #### Fitting Tram ######
+> df = data.frame(train$df_orig$numpy())
+> fit.orig = Colr(X2~X1,df)
+> summary(fit.orig)
+
+  Continuous Outcome Logistic Regression 
+
+Call:
+Colr(formula = X2 ~ X1, data = df)
+
+Coefficients:
+   Estimate Std. Error z value Pr(>|z|)    
+X1  2.05940    0.03554   57.94   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Log-Likelihood:
+ -15878.82 (df = 8)
+Likelihood-ratio Test: Chisq = 3440.728 on 1 degrees of freedom; p = < 2.2e-16
+
+> confint(fit.orig) #Original
+      2.5 %   97.5 %
+X1 1.989736 2.129067
+> #dd = predict(fit.orig, newdata = data.frame(X1 = 0.5), type = 'density')
+> #x2s = as.numeric(rownames(dd))
+> #plot(x2s, dd, type = 'l', col='red')
+> 
+> #?predict.tram
+> summary(fit.orig)
+
+  Continuous Outcome Logistic Regression 
+
+Call:
+Colr(formula = X2 ~ X1, data = df)
+
+Coefficients:
+   Estimate Std. Error z value Pr(>|z|)    
+X1  2.05940    0.03554   57.94   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Log-Likelihood:
+ -15878.82 (df = 8)
+Likelihood-ratio Test: Chisq = 3440.728 on 1 degrees of freedom; p = < 2.2e-16
+
+> confint(fit.orig) #Original 
+      2.5 %   97.5 %
+X1 1.989736 2.129067
+> 
+> # Fitting Tram
+> fit.orig = Polr(x3 ~ x1 + x2,train$df_R)
+> summary(fit.orig)
+
+  Proportional Odds Regression Model 
+
+Call:
+Polr(formula = x3 ~ x1 + x2, data = train$df_R)
+
+Coefficients:
+   Estimate Std. Error z value Pr(>|z|)    
+x1 -0.26359    0.03907  -6.746 1.52e-11 ***
+x2 -0.44489    0.02610 -17.047  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Log-Likelihood:
+ -47447.06 (df = 5)
+Likelihood-ratio Test: Chisq = 295.3932 on 2 degrees of freedom; p = < 2.2e-16
+
+> confint(fit.orig) #Original 
+       2.5 %     97.5 %
+x1 -0.340174 -0.1870103
+x2 -0.496042 -0.3937399
+> 
+> len_theta_max = len_theta
+> for (i in 1:nrow(MA)){ #Maximum number of coefficients (BS and Levels - 1 for the ordinal)
++   if (train$type[i] == 'o'){
++     len_theta_max = max(len_theta_max, nlevels(train$df_R[,i]) - 1)
++   }
++ }
+> param_model = create_param_model(MA, hidden_features_I = hidden_features_I, 
++                                  len_theta = len_theta_max, 
++                                  hidden_features_CS = hidden_features_CS)
+> 
+> x = tf$ones(shape = c(2L, 3L))
+> param_model(1*x)
+tf.Tensor(
+[[[ 0.          0.         -0.07312028 -0.04333318  0.03126064
+   -0.06415318  0.0094295  -0.08935498  0.03034813 -0.02511482
+   -0.09980091 -0.02279169  0.00061976  0.05290011 -0.02729211
+   -0.01800037 -0.04186203 -0.01045997  0.00798374 -0.03563387
+    0.05145967 -0.01650909]
+  [ 0.          0.03220697  0.11684897  0.00638452 -0.00971418
+   -0.00531121  0.01914124 -0.04010526 -0.05455137  0.00898531
+   -0.00036001  0.02190027 -0.00216183 -0.0110756   0.11199402
+   -0.01565328 -0.000743    0.01990925  0.06636149  0.07861265
+   -0.14714631 -0.05874656]
+  [-0.03194608  0.03017868 -0.01190287 -0.05769857 -0.10957793
+   -0.06742402  0.03264159  0.00508531 -0.03396232 -0.01041294
+    0.05720987  0.10468648  0.0881074   0.02027135  0.05828578
+    0.06500988 -0.05227967  0.01995484 -0.0572449   0.04637227
+   -0.01888593  0.10804965]]
+
+ [[ 0.          0.         -0.07312028 -0.04333318  0.03126064
+   -0.06415318  0.0094295  -0.08935498  0.03034813 -0.02511482
+   -0.09980091 -0.02279169  0.00061976  0.05290011 -0.02729211
+   -0.01800037 -0.04186203 -0.01045997  0.00798374 -0.03563387
+    0.05145967 -0.01650909]
+  [ 0.          0.03220697  0.11684897  0.00638452 -0.00971418
+   -0.00531121  0.01914124 -0.04010526 -0.05455137  0.00898531
+   -0.00036001  0.02190027 -0.00216183 -0.0110756   0.11199402
+   -0.01565328 -0.000743    0.01990925  0.06636149  0.07861265
+   -0.14714631 -0.05874656]
+  [-0.03194608  0.03017868 -0.01190287 -0.05769857 -0.10957793
+   -0.06742402  0.03264159  0.00508531 -0.03396232 -0.01041294
+    0.05720987  0.10468648  0.0881074   0.02027135  0.05828578
+    0.06500988 -0.05227967  0.01995484 -0.0572449   0.04637227
+   -0.01888593  0.10804965]]], shape=(2, 3, 22), dtype=float32)
+> MA
+     [,1] [,2] [,3]
+[1,] "0"  "ls" "ls"
+[2,] "0"  "0"  "cs"
+[3,] "0"  "0"  "0" 
+> h_params = param_model(train$df_orig)
+> # Check the derivatives of h w.r.t. x
+> x <- tf$ones(shape = c(2L, 3L)) #B,P
+> with(tf$GradientTape(persistent = TRUE) %as% tape, {
++   tape$watch(x)
++   y <- param_model(x)
++ })
+> # parameter (output) has shape B, P, k (num param)
+> # derivation of param wrt to input x
+> # input x has shape B, P
+> # derivation d has shape B,P,k, B,P
+> d <- tape$jacobian(y, x)
+> d[1,,,2,] # only contains zero since independence of batches
+tf.Tensor(
+[[[0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]]
+
+ [[0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]]
+
+ [[0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]
+  [0. 0. 0.]]], shape=(3, 22, 3), dtype=float32)
+> 
+> 
+> # loss before training
+> struct_dag_loss(t_i=train$df_orig, h_params=h_params)
+tf.Tensor(7.3832054, shape=(), dtype=float32)
+Warning message:
+In force(if_any_TRUE) :
+  Indexing tensors are passed as-is to python, no index offsetting or R to python translation is performed. Selected options for one_based and inclusive_stop are ignored and treated as FALSE. To silence this warning, set options(tensorflow.extract.warn_tensors_passed_asis = FALSE)
+> 
+> if (FALSE){
++   with(tf$GradientTape(persistent = TRUE) %as% tape, {
++     h_params = param_model(train$df_orig)
++     loss = struct_dag_loss(train$df_orig, h_params)
++   })
++   gradients = tape$gradient(loss, param_model$trainable_variables)
++   gradients
++ }
+> 
+> param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=len_theta, hidden_features_CS=hidden_features_CS)
+> 
+> 
+> # ######### DEBUG TRAINING FROM HAND #######
+> # # Define the optimizer
+> # optimizer <- tf$optimizers$Adam(lr=0.01)
+> # # Define the number of epochs for training
+> # num_epochs <- 10
+> # for (epoch in 1:num_epochs) {
+> #   with(tf$GradientTape(persistent = TRUE) %as% tape, {
+> #     # Compute the model's prediction - forward pass
+> #     h_params <- param_model(train$df_scaled)
+> #     loss <- struct_dag_loss(train$df_scaled, h_params)
+> #   })
+> #   # Compute gradients
+> #   gradients <- tape$gradient(loss, param_model$trainable_variables)
+> #   # Apply gradients to update the model parameters
+> #   optimizer$apply_gradients(purrr::transpose(list(gradients, param_model$trainable_variables)))
+> #   # Print the loss every epoch or more frequently if desired
+> #   print(paste("Epoch", epoch, ", Loss:", loss$numpy()))
+> # }
+> 
+> 
+> optimizer = optimizer_adam()
+WARNING:absl:At this time, the v2.11+ optimizer `tf.keras.optimizers.Adam` runs slowly on M1/M2 Macs, please use the legacy Keras optimizer instead, located at `tf.keras.optimizers.legacy.Adam`.
+> param_model$compile(optimizer, loss=struct_dag_loss)
+WARNING:absl:There is a known slowdown when using v2.11+ Keras optimizers on M1/M2 Macs. Falling back to the legacy Keras optimizer, i.e., `tf.keras.optimizers.legacy.Adam`.
+> param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
+   1/5715 [..............................] - ETA: 41:53 - loss: 6.5233  77/5715 [..............................] - ETA: 3s - loss: 7.0760    192/5715 [>.............................] - ETA: 2s - loss: 7.1275 314/5715 [>.............................] - ETA: 2s - loss: 7.1507 438/5715 [=>............................] - ETA: 2s - loss: 7.2076 562/5715 [=>............................] - ETA: 2s - loss: 7.2032 687/5715 [==>...........................] - ETA: 2s - loss: 7.2168 811/5715 [===>..........................] - ETA: 2s - loss: 7.2138 935/5715 [===>..........................] - ETA: 2s - loss: 7.21471059/5715 [====>.........................] - ETA: 1s - loss: 7.19691185/5715 [=====>........................] - ETA: 1s - loss: 7.19431310/5715 [=====>........................] - ETA: 1s - loss: 7.18281435/5715 [======>.......................] - ETA: 1s - loss: 7.18541560/5715 [=======>......................] - ETA: 1s - loss: 7.18631685/5715 [=======>......................] - ETA: 1s - loss: 7.18641810/5715 [========>.....................] - ETA: 1s - loss: 7.17581935/5715 [=========>....................] - ETA: 1s - loss: 7.17712059/5715 [=========>....................] - ETA: 1s - loss: 7.18672184/5715 [==========>...................] - ETA: 1s - loss: 7.19242309/5715 [===========>..................] - ETA: 1s - loss: 7.19402435/5715 [===========>..................] - ETA: 1s - loss: 7.19722560/5715 [============>.................] - ETA: 1s - loss: 7.19432685/5715 [=============>................] - ETA: 1s - loss: 7.19172811/5715 [=============>................] - ETA: 1s - loss: 7.18722935/5715 [==============>...............] - ETA: 1s - loss: 7.18823060/5715 [===============>..............] - ETA: 1s - loss: 7.19073185/5715 [===============>..............] - ETA: 1s - loss: 7.19843311/5715 [================>.............] - ETA: 0s - loss: 7.19413437/5715 [=================>............] - ETA: 0s - loss: 7.19303563/5715 [=================>............] - ETA: 0s - loss: 7.19353687/5715 [==================>...........] - ETA: 0s - loss: 7.19373813/5715 [===================>..........] - ETA: 0s - loss: 7.19393939/5715 [===================>..........] - ETA: 0s - loss: 7.19574064/5715 [====================>.........] - ETA: 0s - loss: 7.19744189/5715 [====================>.........] - ETA: 0s - loss: 7.19204315/5715 [=====================>........] - ETA: 0s - loss: 7.19494438/5715 [======================>.......] - ETA: 0s - loss: 7.19244564/5715 [======================>.......] - ETA: 0s - loss: 7.19414690/5715 [=======================>......] - ETA: 0s - loss: 7.19594815/5715 [========================>.....] - ETA: 0s - loss: 7.19924941/5715 [========================>.....] - ETA: 0s - loss: 7.19935065/5715 [=========================>....] - ETA: 0s - loss: 7.20055189/5715 [==========================>...] - ETA: 0s - loss: 7.20305313/5715 [==========================>...] - ETA: 0s - loss: 7.20315438/5715 [===========================>..] - ETA: 0s - loss: 7.20255557/5715 [============================>.] - ETA: 0s - loss: 7.20335682/5715 [============================>.] - ETA: 0s - loss: 7.20595715/5715 [==============================] - 3s 407us/step - loss: 7.2042
+[1] 7.204237
+> 
+> 
+> ##### Training ####
+> fnh5 = paste0(fn, '_E', num_epochs, '.h5')
+> fnRdata = paste0(fn, '_E', num_epochs, '.RData')
+> if (file.exists(fnh5)){
++   param_model$load_weights(fnh5)
++   load(fnRdata) #Loading of the workspace causes trouble e.g. param_model is zero
++   # Quick Fix since loading global_min causes problem (no tensors as RDS)
++   (global_min = train$min)
++   (global_max = train$max)
++ } else {
++   if (FALSE){ ### Full Training w/o diagnostics
++     hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 200L,verbose = TRUE)
++     param_model$save_weights(fn)
++     plot(hist$epoch, hist$history$loss)
++     plot(hist$epoch, hist$history$loss, ylim=c(1.07, 1.2))
++   } else { ### Training with diagnostics
++     ws <- data.frame(w12 = numeric())
++     train_loss <- numeric()
++     val_loss <- numeric()
++     
++     # Training loop
++     for (e in 1:num_epochs) {
++       print(paste("Epoch", e))
++       hist <- param_model$fit(x = train$df_orig, y = train$df_orig, 
++                               epochs = 1L, verbose = TRUE, 
++                               validation_data = list(test$df_orig,test$df_orig))
++       
++       # Append losses to history
++       train_loss <- c(train_loss, hist$history$loss)
++       val_loss <- c(val_loss, hist$history$val_loss)
++       
++       # Extract specific weights
++       w <- param_model$get_layer(name = "beta")$get_weights()[[1]]
++       
++       ws <- rbind(ws, data.frame(w12 = w[1, 2], w13 = w[1, 3], w23 = w[2, 3]))
++     }
++     # Save the model
++     param_model$save_weights(fnh5)
++     save(train_loss, val_loss, train_loss, f, MA, len_theta,
++          hidden_features_I,
++          hidden_features_CS,
++          #global_min, global_max,
++          file = fnRdata)
++   }
++ }
+tf.Tensor([0.7938316  0.41831034 4.        ], shape=(3), dtype=float32)
+> 
+> #pdf(paste0('loss_',fn,'.pdf'))
+> epochs = length(train_loss)
+> #plot(1:length(train_loss), train_loss, type='l', main='Normal Training (green is valid)')
+> #lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
+> # plot(1:epochs, ws[,1], type='l', main='Coef', ylim=c(-0.5, 3))#, ylim=c(0, 6))
+> # abline(h=2, col='green')
+> # lines(1:epochs, ws[,2], type='l', ylim=c(0, 3))
+> # abline(h=0.2, col='green')
+> # lines(1:epochs, ws[,3], type='l', ylim=c(0, 3))
+> # abline(h=-0.3, col='green')
+> 
+> 
+> ggplot(ws, aes(x=1:nrow(ws))) + 
++   geom_line(aes(y=w12, color='x1 --> x2')) + 
++   geom_line(aes(y=w13, color='x1 --> x3')) + 
++   geom_line(aes(y=w23, color='x2 --> x3')) + 
++   geom_hline(aes(yintercept=2, color='x1 --> x2'), linetype=2) +
++   geom_hline(aes(yintercept=0.2, color='x1 --> x3'), linetype=2) +
++   geom_hline(aes(yintercept=-0.3, color='x2 --> x3'), linetype=2) +
++   #scale_color_manual(values=c('x1 --> x2'='skyblue', 'x1 --> x3='red', 'x2 --> x3'='darkgreen')) +
++   labs(x='Epoch', y='Coefficients') +
++   theme_minimal() +
++   theme(legend.title = element_blank())  # Removes the legend title
+>   
+> 
+> param_model$evaluate(x = train$df_orig, y=train$df_scaled)
+   1/1250 [..............................] - ETA: 1:45 - loss: 0.0000e+00 152/1250 [==>...........................] - ETA: 0s - loss: 0.0000e+00   372/1250 [=======>......................] - ETA: 0s - loss: 0.0000e+00 593/1250 [=============>................] - ETA: 0s - loss: 0.0000e+00 815/1250 [==================>...........] - ETA: 0s - loss: 0.0000e+001036/1250 [=======================>......] - ETA: 0s - loss: 0.0000e+001250/1250 [==============================] - 0s 239us/step - loss: 0.0000e+00
+[1] 0
+> fn
+[1] "summerof24/runs/triangle_structured_mixed/run1/triangle_mixed_DPG0.5exp_ModelCS"
+> len_theta
+[1] 20
+> param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
+tf.Tensor(
+[[[ 0.          1.957795    0.18952486]
+  [-0.          0.          0.        ]
+  [-0.          0.         -0.        ]]], shape=(1, 3, 3), dtype=float32)
+> 
+> 
+> #### Checking the transformation ####
+> h_params = param_model(train$df_orig)
+> r = check_baselinetrafo(h_params)
+> Xs = r$Xs
+> h_I = r$h_I
+> 
+> ##### X1
+> fit.1 = Colr(X1~1,df)
+> plot(fit.1, which = 'baseline only', main='Black: COLR, Red: Our Model')
+> lines(Xs[,1], h_I[,1], col='red', lty=2, lwd=3)
+> rug(train$df_orig$numpy()[,1], col='blue')
+> 
+> 
+> df = data.frame(train$df_orig$numpy())
+> fit.21 = Colr(X2~X1,df)
+> temp = model.frame(fit.21)[1:2,-1, drop=FALSE] #WTF!
+> plot(fit.21, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
++      main='h_I(X2) Black: COLR, Red: Our Model', cex.main=0.8)
+> lines(Xs[,2], h_I[,2], col='red', lty=2, lwd=5)
+> rug(train$df_orig$numpy()[,2], col='blue')
+> 
+> fit.312 = Polr(x3 ~ x1 + x2,train$df_R)
+> temp = model.frame(fit.312)[1:2, -1, drop=FALSE] #WTF!
+> 
+> plot(fit.312, which = 'baseline only', newdata = temp, col='blue', 
++      main='h_I(X3) Polr (blue) our Model (red)', cex.main=0.8)
+> rug(train$df_orig$numpy()[,3], col='blue')
+> theta_tilde <- h_params[,,3:dim(h_params)[3], drop = FALSE]
+> #Thetas for intercept
+> theta = to_theta3(theta_tilde)
+> theta_base = theta[1,3,1:3] #Are all equal for the batch
+> points(1:3, theta_base, col='red', pch='+', cex=2)
+> 
+> 
+> if (FALSE){
++   # Check the derivatives of h w.r.t. x
++   x <- tf$ones(shape = c(10L, 3L)) #B,P
++   with(tf$GradientTape(persistent = TRUE) %as% tape, {
++     tape$watch(x)
++     y <- param_model(x)
++   })
++   d <- tape$jacobian(y, x)
++   for (k in 1:(2+len_theta)){ #k = 1
++     print(k) #B,P,k,B,P
++     B = 1
++     print(d[B,,k,B,]) #
++   }
++ }
+> 
+> ##### Checking observational distribution ####
+> s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 5000)
+sample_from_target Fraction of extrapolated samples > 1 : %f 
+0.0248666666448116sample_from_target Fraction of extrapolated samples > 1 : %f 
+0.0359999984502792> 
+> plot(table(train$df_R[,3])/sum(table(train$df_R[,3])), ylab='Probability ', 
++      main='Black = Observations, Red samples from TRAM-DAG',
++      xlab='X3')
+> table(train$df_R[,3])/sum(table(train$df_R[,3]))
+
+       1        2        3        4 
+0.188525 0.532450 0.102675 0.176350 
+> points(as.numeric(table(s[,3]$numpy()))/5000, col='red', lty=2)
+> table(s[,3]$numpy())/5000
+
+     1      2      3      4 
+0.1890 0.5186 0.1098 0.1826 
+> 
+> par(mfrow=c(1,2))
+> for (i in 1:2){
++   hist(train$df_orig$numpy()[,i], freq=FALSE, 100,main=paste0("X",i, " red: ours, black: data"), xlab='samples')
++   #hist(train$df_orig$numpy()[,i], freq=FALSE, 100,main=paste0("X_",i))
++   lines(density(s[,i]$numpy()), col='red')
++ }
+> par(mfrow=c(1,1))
+> 
+> ######### Simulation of do-interventions #####
+> doX=c(0.2, NA, NA)
+> dx0.2 = dgp(10000, doX=doX)
+> dx0.2$df_orig$numpy()[1:5,]
+     [,1]        [,2] [,3]
+[1,]  0.2 -0.02764747    1
+[2,]  0.2 -0.92503619    3
+[3,]  0.2 -0.46860310    2
+[4,]  0.2  1.31564105    1
+[5,]  0.2 -0.45643979    1
+> ds = dx0.2$df_orig$numpy()[,i]
+> 
+> doX=c(0.7, NA, NA)
+> dx7 = dgp(10000, doX=doX)
+> #hist(dx0.2$df_orig$numpy()[,2], freq=FALSE,100)
+> mean(dx7$df_orig$numpy()[,2]) - mean(dx0.2$df_orig$numpy()[,2])  
+[1] -0.2025969
+> mean(dx7$df_orig$numpy()[,3]) - mean(dx0.2$df_orig$numpy()[,3])  
+[1] -0.0016
+> 
+> ########### Do(x1) seems to work#####
+> 
+> #### Check intervention distribution after do(X1=0.2)
+> df = data.frame(train$df_orig$numpy())
+> fit.x2 = Colr(X2~X1,df)
+> x2_dense = predict(fit.x2, newdata = data.frame(X1 = 0.2), type = 'density')
+> x2s = as.numeric(rownames(x2_dense))
+> 
+> ## samples from x2 under do(x1=0.2) via simulate
+> ddd = as.numeric(unlist(simulate(fit.x2, newdata = data.frame(X1 = 0.2), nsim = 1000)))
+> s2_colr = rep(NA, length(ddd))
+> for (i in 1:length(ddd)){
++   s2_colr[i] = as.numeric(ddd[[i]]) #<--TODO somethimes 
++ }
+> 
+> if(sum(is.na(s2_colr)) > 0){
++   stop("Pechgehabt mit Colr, viel Glück und nochmals!")
++ }
+> 
+> hist(ds, freq=FALSE, 100, main='Do(X1=0.2) X2',  
++      sub='Histogram from DGP with do. Blue: Colr', xlab='samples')
+> lines(x2s, x2_dense, type = 'l', col='blue', lw=2)
+> 
+> # fit.x3 = Colr(X3 ~ X1 + X2,df)
+> # newdata = data.frame(
+> #     X1 = rep(0.2, length(s2_colr)), 
+> #     X2 = s2_colr)
+> # 
+> # s3_colr = rep(NA, nrow(newdata))
+> # for (i in 1:nrow(newdata)){
+> #   # i = 2
+> #   s3_colr[i] = simulate(fit.x3, newdata = newdata[i,], nsim = 1)
+> # }
+> 
+> s_dag = do_dag_struct(param_model, train$A, doX=c(0.2, NA, NA))
+sample_from_target Fraction of extrapolated samples > 1 : %f 
+0.04318618029356> i = 2
+> hist(ds, freq=FALSE, 50, main='X2 | Do(X1=0.2)', xlab='samples', 
++      sub='Histogram from DGP with do. red:TRAM_DAG')
+> sample_dag_0.2 = s_dag[,i]$numpy()
+> lines(density(sample_dag_0.2), col='red', lw=2)
+> m_x2_do_x10.2 = median(sample_dag_0.2)
+> 
+> 
+> i = 3 
+> d = dx0.2$df_orig$numpy()[,i]
+> plot(table(d)/length(d), ylab='Probability ', 
++      main='X3 | do(X1=0.2)',
++      xlab='X3', ylim=c(0,0.6),  sub='Black DGP with do. red:TRAM_DAG')
+> points(as.numeric(table(s_dag[,3]$numpy()))/nrow(s_dag), col='red', lty=2)
+> 
+> 
+> s_dag = do_dag_struct(param_model, train$A, doX=c(0.7, NA, NA))
+sample_from_target Fraction of extrapolated samples > 1 : %f 
+0.0303902756422758> i = 2
+> ds = dx7$df_orig$numpy()[,i]
+> hist(ds, freq=FALSE, 50, main='X2 | Do(X1=0.7)', xlab='samples', 
++      sub='Histogram from DGP with do. red:TRAM_DAG')
+> sample_dag_07 = s_dag[,i]$numpy()
+> lines(density(sample_dag_07), col='red', lw=2)
+> m_x2_do_x10.7 = median(sample_dag_07)
+> m_x2_do_x10.7 - m_x2_do_x10.2
+[1] -0.2275226
+> 
+> ###### Comparison of estimated f(x2) vs TRUE f(x2) #######
+> shift_12 = shift_23 = shift1 = cs_23 = xs = seq(-1,1,length.out=41)
+> idx0 = which(xs == 0) #Index of 0 xs needs to be odd
+> for (i in 1:length(xs)){
++   #i = 1
++   x = xs[i]
++   # Varying x1
++   X = tf$constant(c(x, 0.5, 3), shape=c(1L,3L)) 
++   shift1[i] =   param_model(X)[1,3,2]$numpy() #2=LS Term X1->X3
++   shift_12[i] = param_model(X)[1,2,2]$numpy() #2=LS Term X1->X2
++   
++   #Varying x2
++   X = tf$constant(c(0.5, x, 3), shape=c(1L,3L)) 
++   cs_23[i] = param_model(X)[1,3,1]$numpy() #1=CS Term
++   shift_23[i] = param_model(X)[1,3,2]$numpy() #2-LS Term X2-->X3 (Beate Notation)
++ }
+> 
+> par(mfrow=c(2,2))
+> 
+> plot(xs, shift_12, main='LS-Term (black DGP, red Ours)', 
++      sub = 'Effect of x1 on x2',
++      xlab='x1', col='red')
+> abline(0, 2)
+> 
+> delta_0 = shift1[idx0] - 0
+> plot(xs, shift1 - delta_0, main='LS-Term (black DGP, red Ours)', 
++      sub = paste0('Effect of x1 on x3, delta_0 ', round(delta_0,2)),
++      xlab='x1', col='red')
+> abline(0, .2)
+> 
+> 
+> if (F32 == 1){ #Linear DGP
++   if (MA[2,3] == 'ls'){
++     delta_0 = shift_23[idx0] - f(0)
++     plot(xs, shift_23 - delta_0, main='LS-Term (black DGP, red Ours)', 
++          sub = paste0('Effect of x2 on x3, delta_0 ', round(delta_0,2)),
++          xlab='x2', col='red')
++     #abline(shift_23[length(shift_23)/2], -0.3)
++     abline(0, -0.3)
++   } 
++   if (MA[2,3] == 'cs'){
++     plot(xs, cs_23, main='CS-Term (black DGP, red Ours)', xlab='x2',  
++          sub = 'Effect of x2 on x3',col='red')
++     
++     abline(cs_23[idx0], -0.3)  
++   }
++ } else{ #Non-Linear DGP
++   if (MA[2,3] == 'ls'){
++     delta_0 = shift_23[idx0] - f(0)
++     plot(xs, shift_23 - delta_0, main='LS-Term (black DGP, red Ours)', 
++          sub = paste0('Effect of x2 on x3, delta_0 ', round(delta_0,2)),
++          xlab='x2', col='red')
++     lines(xs, f(xs))
++   } else if (MA[2,3] == 'cs'){
++     plot(xs, cs_23 + ( -cs_23[idx0] + f(0) ),
++          ylab='CS',
++          main='CS-Term (black DGP f2(x), red Ours)', xlab='x2',  
++          sub = 'Effect of x2 on x3',col='red')
++     lines(xs, f(xs))
++   } else{
++     print(paste0("Unknown Model ", MA[2,3]))
++   }
++ }
+> #plot(xs,f(xs), xlab='x2', main='DGP')
+> par(mfrow=c(1,1))
+> 
+> 
+> if (FALSE){
++ ####### Compplete transformation Function #######
++ ### Copied from structured DAG Loss
++ t_i = train$df_orig
++ k_min <- k_constant(global_min)
++ k_max <- k_constant(global_max)
++ 
++ # from the last dimension of h_params the first entriy is h_cs1
++ # the second to |X|+1 are the LS
++ # the 2+|X|+1 to the end is H_I
++ h_cs <- h_params[,,1, drop = FALSE]
++ h_ls <- h_params[,,2, drop = FALSE]
++ #LS
++ h_LS = tf$squeeze(h_ls, axis=-1L)#tf$einsum('bx,bxx->bx', t_i, beta)
++ #CS
++ h_CS = tf$squeeze(h_cs, axis=-1L)
++ 
++ theta_tilde <- h_params[,,3:dim(h_params)[3], drop = FALSE]
++ theta = to_theta3(theta_tilde)
++ cont_dims = which(data_type == 'c') #1 2
++ cont_ord = which(data_type == 'o') #3
++ 
++ ### Continiuous dimensions
++ #### At least one continuous dimension exits
++ h_I = h_dag_extra(t_i[,cont_dims, drop=FALSE], theta[,cont_dims,1:len_theta,drop=FALSE], k_min[cont_dims], k_max[cont_dims]) 
++ 
++ h_12 = h_I + h_LS[,cont_dims, drop=FALSE] + h_CS[,cont_dims, drop=FALSE]
++ 
++ ### Ordingal Dimensions
++ B = tf$shape(t_i)[1]
++ col = 3
++ nol = tf$cast(k_max[col] - 1L, tf$int32) # Number of cut-points in respective dimension
++ theta_ord = theta[,col,1:nol,drop=TRUE] # Intercept
++ h_3 = theta_ord + h_LS[,col, drop=FALSE] + h_CS[,col, drop=FALSE]
++ 
++ ####### DGP Transformations #######
++ X_1 = t_i[,1]$numpy()
++ X_2 = t_i[,2]$numpy()
++ h2_DGP = 5 *X_2 + 2 * X_1
++ plot(h2_DGP[1:2000], h_12[1:2000,2]$numpy())
++ abline(0,1,col='red')
++ 
++ h2_DGP_I = 5*X_2
++ h2_M_I = h_I[,2]
++ 
++ plot(h2_DGP_I, h2_M_I)
++ abline(0,1,col='red')
++ 
++ h_3 #Model
++ 
++ ##### DGP 
++ theta_k = c(-2, 0.42, 1.02)
++ n_obs = B$numpy()
++ h_3_DPG = matrix(, nrow=n_obs, ncol=3)
++ for (i in 1:n_obs){
++   h_3_DPG[i,] = theta_k + 0.2 * X_1[i] + f(X_2[i]) #- 0.3 * X_2[i]
++ }
++ 
++ plot(h_3_DPG[1:2000,3], h_3[1:2000,3]$numpy())
++ abline(0,1,col='green')
++ 
++ #LS
++ plot(-0.2*X_1, h_LS[,3]$numpy())
++ abline(0,1,col='green')
++ 
++ #LS
++ plot(f(X_2), h_CS[,3]$numpy())
++ abline(0,1,col='green')
++ }
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> proc.time()
+  usuário   sistema decorrido 
+   38.266     6.220    38.093 

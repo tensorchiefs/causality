@@ -31,17 +31,17 @@ source('summerof24/utils_tfp.R')
 ##### Flavor of experiment ######
 
 #### Saving the current version of the script into runtime
-DIR = 'summerof24/runs/triangle_structured_mixed/run_small_net'
+DIR = 'summerof24/runs/triangle_structured_mixed/run1'
 if (!dir.exists(DIR)) {
   dir.create(DIR, recursive = TRUE)
 }
 # Copy this file to the directory DIR
-file.copy('summerof24/triangle_structured_mixed.R', file.path(DIR, 'triangle_structured_mixed.R'), overwrite=TRUE)
+file.copy('summerof24/triangle_structured_mixed.R', file.path(DIR, 'triangle_structured_mixed.R'))
 
 num_epochs <- 500
 len_theta = 20 # Number of coefficients of the Bernstein polynomials
-hidden_features_I = c(2,2,2,2) 
-hidden_features_CS = c(2,2,2,2)
+hidden_features_I = c(2,25,25,2) 
+hidden_features_CS = c(2,25,25,2)
 
 if (F32 == 1){
   FUN_NAME = 'DPGLinear'
@@ -71,12 +71,11 @@ if (M32 == 'ls') {
 
 # fn = 'triangle_mixed_DGPLinear_ModelLinear.h5'
 # fn = 'triangle_mixed_DGPSin_ModelCS.h5'
-fn = file.path(DIR, paste0('triangle_mixed_', FUN_NAME, '_', MODEL_NAME))
+fn = paste0('triangle_mixed_', FUN_NAME, '_', MODEL_NAME)
 print(paste0("Starting experiment ", fn))
    
 xs = seq(-1,1,0.1)
-
-plot(xs, f(xs), sub=fn, xlab='x2', ylab='f(x2)', main='DGP influence of x2 on x3')
+plot(xs, f(xs), main=fn, xlab='x2', ylab='f(x2)', sub='DGP influence of x2 on x3')
 
 ##### DGP ########
 dgp <- function(n_obs, doX=c(NA, NA, NA)) {
@@ -289,7 +288,6 @@ if (file.exists(fnh5)){
     save(train_loss, val_loss, train_loss, f, MA, len_theta,
          hidden_features_I,
          hidden_features_CS,
-         ws,
          #global_min, global_max,
          file = fnRdata)
   }
@@ -297,14 +295,8 @@ if (file.exists(fnh5)){
 
 #pdf(paste0('loss_',fn,'.pdf'))
 epochs = length(train_loss)
-plot(1:length(train_loss), train_loss, type='l', main='Normal Training (green is valid)')
-lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
-
-# Last 50
-diff = max(epochs - 100,0)
-plot(diff:epochs, val_loss[diff:epochs], type = 'l', col = 'green', main='Last 50 epochs')
-lines(diff:epochs, train_loss[diff:epochs], type='l')
-
+#plot(1:length(train_loss), train_loss, type='l', main='Normal Training (green is valid)')
+#lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
 # plot(1:epochs, ws[,1], type='l', main='Coef', ylim=c(-0.5, 3))#, ylim=c(0, 6))
 # abline(h=2, col='green')
 # lines(1:epochs, ws[,2], type='l', ylim=c(0, 3))
@@ -403,7 +395,7 @@ par(mfrow=c(1,1))
 doX=c(0.2, NA, NA)
 dx0.2 = dgp(10000, doX=doX)
 dx0.2$df_orig$numpy()[1:5,]
-
+ds = dx0.2$df_orig$numpy()[,i]
 
 doX=c(0.7, NA, NA)
 dx7 = dgp(10000, doX=doX)
@@ -430,7 +422,7 @@ if(sum(is.na(s2_colr)) > 0){
   stop("Pechgehabt mit Colr, viel Glück und nochmals!")
 }
 
-hist(dx0.2$df_orig$numpy()[,2], freq=FALSE, 100, main='Do(X1=0.2) X2',  
+hist(ds, freq=FALSE, 100, main='Do(X1=0.2) X2',  
      sub='Histogram from DGP with do. Blue: Colr', xlab='samples')
 lines(x2s, x2_dense, type = 'l', col='blue', lw=2)
 
@@ -446,9 +438,10 @@ lines(x2s, x2_dense, type = 'l', col='blue', lw=2)
 # }
 
 s_dag = do_dag_struct(param_model, train$A, doX=c(0.2, NA, NA))
-hist(dx0.2$df_orig$numpy()[,2], freq=FALSE, 50, main='X2 | Do(X1=0.2)', xlab='samples', 
+i = 2
+hist(ds, freq=FALSE, 50, main='X2 | Do(X1=0.2)', xlab='samples', 
      sub='Histogram from DGP with do. red:TRAM_DAG')
-sample_dag_0.2 = s_dag[,2]$numpy()
+sample_dag_0.2 = s_dag[,i]$numpy()
 lines(density(sample_dag_0.2), col='red', lw=2)
 m_x2_do_x10.2 = median(sample_dag_0.2)
 
