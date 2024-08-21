@@ -3,10 +3,10 @@ reticulate::use_python("/Users/oli/miniforge3/envs/r-tensorflow/bin/python3.8", 
 library(reticulate)
 reticulate::py_config()
 
-# Get command-line arguments
+# Get command-line arguments - if called via sh
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) == 0) {
-  args <- c(1, 'ls')
+if (length(args) == 0) {  # if not called via sh
+  args <- c(1, 'cs')
 }
 F32 <- as.numeric(args[1])
 M32 <- args[2]
@@ -71,6 +71,7 @@ if (M32 == 'ls') {
 
 # fn = 'triangle_mixed_DGPLinear_ModelLinear.h5'
 # fn = 'triangle_mixed_DGPSin_ModelCS.h5'
+
 fn = file.path(DIR, paste0('triangle_mixed_', FUN_NAME, '_', MODEL_NAME))
 print(paste0("Starting experiment ", fn))
    
@@ -152,7 +153,7 @@ data_type = train$type
 
 #### Fitting Tram ######
 df = data.frame(train$df_orig$numpy())
-fit.orig = Colr(X2~X1,df)
+fit.orig = Colr(X2~X1, order=len_theta ,df)
 summary(fit.orig)
 confint(fit.orig) #Original
 #dd = predict(fit.orig, newdata = data.frame(X1 = 0.5), type = 'density')
@@ -164,7 +165,7 @@ summary(fit.orig)
 confint(fit.orig) #Original 
 
 # Fitting Tram
-fit.orig = Colr(x3 ~ x1 + x2,train$df_R)
+fit.orig = Colr(x3 ~ x1 + x2 ,order=len_theta ,train$df_R)
 summary(fit.orig)
 confint(fit.orig) #Original 
 
@@ -236,7 +237,7 @@ param_model$compile(optimizer, loss=struct_dag_loss)
 param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
 
 
-##### Training ####
+##### Training or readin of weights if h5 available ####
 fnh5 = paste0(fn, '_E', num_epochs, '.h5')
 fnRdata = paste0(fn, '_E', num_epochs, '.RData')
 if (file.exists(fnh5)){
@@ -286,7 +287,7 @@ if (file.exists(fnh5)){
 ####### FINISHED TRAINING #####
 #pdf(paste0('loss_',fn,'.pdf'))
 epochs = length(train_loss)
-plot(1:length(train_loss), train_loss, type='l', main='Normal Training (green is valid)')
+plot(1:length(train_loss), train_loss, type='l', main='Training (black: train, green: valid)')
 lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
 
 # Last 50
@@ -466,7 +467,7 @@ delta_0 = shift1[idx0] - 0
 plot(xs, shift1 - delta_0, main='LS-Term (black DGP, red Ours)', 
      sub = paste0('Effect of x1 on x3, delta_0 ', round(delta_0,2)),
      xlab='x1', col='red')
-abline(0, .2)
+abline(0, -.2)
 
 
 if (F32 == 1){ #Linear DGP
@@ -476,13 +477,13 @@ if (F32 == 1){ #Linear DGP
          sub = paste0('Effect of x2 on x3, delta_0 ', round(delta_0,2)),
          xlab='x2', col='red')
     #abline(shift_23[length(shift_23)/2], -0.3)
-    abline(0, -0.3)
+    abline(0, 0.3)
   } 
   if (MA[2,3] == 'cs'){
     plot(xs, cs_23, main='CS-Term (black DGP, red Ours)', xlab='x2',  
          sub = 'Effect of x2 on x3',col='red')
     
-    abline(cs_23[idx0], -0.3)  
+    abline(cs_23[idx0], 0.3)  
   }
 } else{ #Non-Linear DGP
   if (MA[2,3] == 'ls'){
