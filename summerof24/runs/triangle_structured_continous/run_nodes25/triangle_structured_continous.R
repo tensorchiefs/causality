@@ -76,7 +76,8 @@ print(paste0("Starting experiment ", fn))
    
 xs = seq(-1,1,0.1)
 
-plot(xs, f(xs), sub=fn, xlab='x2', ylab='f(x2)', main='DGP influence of x2 on x3', cex.sub=0.4)
+plot(xs, f(xs), sub=fn, xlab='x2', ylab='f(x2)', main='DGP influence of x2 on x3')
+
 ##### DGP ########
 dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     #n_obs = 1e5 n_obs = 10
@@ -93,7 +94,6 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     # Sampling according to colr
     if (is.na(doX[2])){
       U2 = runif(n_obs)
-      
       x_2_dash = qlogis(U2)
       #x_2_dash = h_0(x_2) + beta * X_1
       #x_2_dash = 0.42 * x_2 + 2 * X_1
@@ -283,7 +283,6 @@ if (file.exists(fnh5)){
   }
 }
 
-####### FINISHED TRAINING #####
 #pdf(paste0('loss_',fn,'.pdf'))
 epochs = length(train_loss)
 plot(1:length(train_loss), train_loss, type='l', main='Normal Training (green is valid)')
@@ -307,8 +306,8 @@ ggplot(ws, aes(x=1:nrow(ws))) +
   geom_line(aes(y=w13, color='x1 --> x3')) + 
   geom_line(aes(y=w23, color='x2 --> x3')) + 
   geom_hline(aes(yintercept=2, color='x1 --> x2'), linetype=2) +
-  geom_hline(aes(yintercept=-0.2, color='x1 --> x3'), linetype=2) +
-  geom_hline(aes(yintercept=+0.3, color='x2 --> x3'), linetype=2) +
+  geom_hline(aes(yintercept=0.2, color='x1 --> x3'), linetype=2) +
+  geom_hline(aes(yintercept=-0.3, color='x2 --> x3'), linetype=2) +
   #scale_color_manual(values=c('x1 --> x2'='skyblue', 'x1 --> x3='red', 'x2 --> x3'='darkgreen')) +
   labs(x='Epoch', y='Coefficients') +
   theme_minimal() +
@@ -328,21 +327,21 @@ Xs = r$Xs
 h_I = r$h_I
 
 ##### X1
-fit.1 = Colr(X1~1,df, order=len_theta)
+fit.1 = Colr(X1~1,df)
 plot(fit.1, which = 'baseline only', main='Black: COLR, Red: Our Model')
 lines(Xs[,1], h_I[,1], col='red', lty=2, lwd=3)
 rug(train$df_orig$numpy()[,1], col='blue')
 
 
 df = data.frame(train$df_orig$numpy())
-fit.21 = Colr(X2~X1,df, order=len_theta)
+fit.21 = Colr(X2~X1,df)
 temp = model.frame(fit.21)[1:2,-1, drop=FALSE] #WTF!
 plot(fit.21, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
      main='h_I(X2) Black: COLR, Red: Our Model', cex.main=0.8)
 lines(Xs[,2], h_I[,2], col='red', lty=2, lwd=5)
 rug(train$df_orig$numpy()[,2], col='blue')
 
-fit.312 = Colr(X3 ~ X1 + X2,df, order=len_theta)
+fit.312 = Colr(X3 ~ X1 + X2,df)
 temp = model.frame(fit.312)[1:2, -1, drop=FALSE] #WTF!
 
 plot(fit.312, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
