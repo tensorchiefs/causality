@@ -3,10 +3,10 @@ reticulate::use_python("/Users/oli/miniforge3/envs/r-tensorflow/bin/python3.8", 
 library(reticulate)
 reticulate::py_config()
 
-# Get command-line arguments
+# Get command-line arguments - if called via sh
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) == 0) {
-  args <- c(1, 'ls')
+if (length(args) == 0) {  # if not called via sh
+  args <- c(4, 'cs')
 }
 F32 <- as.numeric(args[1])
 M32 <- args[2]
@@ -43,6 +43,8 @@ len_theta = 20 # Number of coefficients of the Bernstein polynomials
 hidden_features_I = c(2,25,25,2)    #hidden_features_CS=hidden_features_I = c(2,25,25,2)
 hidden_features_CS = c(2,25,25,2)
 
+SEED = 1 #If seed > 0 then the seed is set
+
 if (F32 == 1){
   FUN_NAME = 'DPGLinear'
   f <- function(x) -0.3 * x
@@ -52,6 +54,21 @@ if (F32 == 1){
 } else if (F32 == 3){
   f = function(x) 0.5*exp(x)
   FUN_NAME = 'DPG0.5exp'
+} else if (F32 == 4){
+  f = function(x) 0.75*atan(5*(x+0.12)) 
+  FUN_NAME = 'DPGatan'
+} else {
+  stop("Unknown Function F32")
+}
+
+# xs = seq(-1,1,0.1)
+# f = function(x) 2 * x**3 + 0.1*(x-.5)**5
+if (FALSE){
+  f = function(x) 0.75*atan(5*(x+0.12)) 
+  plot(xs, f(xs))
+  s=train$df_R$x2
+  hist(s, freq=FALSE, 100)
+  hist(f(s), freq=FALSE, 100)
 }
 
 if (M32 == 'ls') {
@@ -71,15 +88,23 @@ if (M32 == 'ls') {
 
 # fn = 'triangle_mixed_DGPLinear_ModelLinear.h5'
 # fn = 'triangle_mixed_DGPSin_ModelCS.h5'
-fn = file.path(DIR, paste0('triangle_mixed_', FUN_NAME, '_', MODEL_NAME))
+
+if (SEED < 0){
+  fn = file.path(DIR, paste0('triangle_mixed_', FUN_NAME, '_', MODEL_NAME))
+} else{
+  fn = file.path(DIR, paste0('triangle_mixed_', FUN_NAME, '_', MODEL_NAME, '_SEED', SEED))
+}
 print(paste0("Starting experiment ", fn))
    
 xs = seq(-1,1,0.1)
 
-plot(xs, f(xs), sub=fn, xlab='x2', ylab='f(x2)', main='DGP influence of x2 on x3')
-
+plot(xs, -f(xs), sub=fn, xlab='x2', ylab='f(x2)', main='DGP influence of x2 on x3', cex.sub=0.4)
 ##### DGP ########
-dgp <- function(n_obs, doX=c(NA, NA, NA)) {
+dgp <- function(n_obs, doX=c(NA, NA, NA), seed=-1) {
+    if (seed > 0) {
+      set.seed(seed)
+      print(paste0("Setting Seed:", seed))
+    }
     #n_obs = 1e5 n_obs = 10
     #Sample X_1 from GMM with 2 components
     if (is.na(doX[1])){
@@ -94,12 +119,13 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     # Sampling according to colr
     if (is.na(doX[2])){
       U2 = runif(n_obs)
+      
       x_2_dash = qlogis(U2)
       #x_2_dash = h_0(x_2) + beta * X_1
-      #x_2_dash = 0.42 * x_2 + 2 * X_1
       X_2 = 1/0.42 * (x_2_dash - 2 * X_1)
       X_2 = 1/5. * (x_2_dash - 0.4 * X_1) # 0.39450
       X_2 = 1/5. * (x_2_dash - 1.2 * X_1) 
+      #h2 = x_2_dash = 5 * x_2 + 2 * X_1
       X_2 = 1/5. * (x_2_dash - 2 * X_1)  # 
       
       
@@ -113,8 +139,10 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
     if (is.na(doX[3])){
       U3 = runif(n_obs)
       x_3_dash = qlogis(U3)
+      #h(x3|x1,x2) = 0.63*x3 - 0.2*x1 - f(x2)
       #x_3_dash = h_0_3(x_3) + gamma_1 * X_1 + gamma_2 * X_2
       #x_3_dash = 0.63 * x_3 -0.2 * X_1 + 1.3 * X_2
+      #x_3_dash = h(x3|x1,x2) = 0.63*x3 - 0.2*x1 - f(x2)
       X_3 = (x_3_dash + 0.2 * X_1 + f(X_2))/0.63
     } else{
       X_3 = rep(doX[3], n_obs)
@@ -142,8 +170,8 @@ dgp <- function(n_obs, doX=c(NA, NA, NA)) {
       A=A))
 } 
 
-train = dgp(40000)
-test  = dgp(10000)
+train = dgp(40000, seed=ifelse(SEED > 0, SEED, -1))
+test  = dgp(40000, seed=ifelse(SEED > 0, SEED + 1, -1))
 (global_min = train$min)
 (global_max = train$max)
 data_type = train$type
@@ -152,7 +180,7 @@ data_type = train$type
 
 #### Fitting Tram ######
 df = data.frame(train$df_orig$numpy())
-fit.orig = Colr(X2~X1,df)
+fit.orig = Colr(X2~X1, order=len_theta ,df)
 summary(fit.orig)
 confint(fit.orig) #Original
 #dd = predict(fit.orig, newdata = data.frame(X1 = 0.5), type = 'density')
@@ -164,7 +192,7 @@ summary(fit.orig)
 confint(fit.orig) #Original 
 
 # Fitting Tram
-fit.orig = Colr(x3 ~ x1 + x2,train$df_R)
+fit.orig = Colr(x3 ~ x1 + x2 ,order=len_theta ,train$df_R)
 summary(fit.orig)
 confint(fit.orig) #Original 
 
@@ -236,7 +264,7 @@ param_model$compile(optimizer, loss=struct_dag_loss)
 param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
 
 
-##### Training ####
+##### Training or readin of weights if h5 available ####
 fnh5 = paste0(fn, '_E', num_epochs, '.h5')
 fnRdata = paste0(fn, '_E', num_epochs, '.RData')
 if (file.exists(fnh5)){
@@ -283,9 +311,10 @@ if (file.exists(fnh5)){
   }
 }
 
+####### FINISHED TRAINING #####
 #pdf(paste0('loss_',fn,'.pdf'))
 epochs = length(train_loss)
-plot(1:length(train_loss), train_loss, type='l', main='Normal Training (green is valid)')
+plot(1:length(train_loss), train_loss, type='l', main='Training (black: train, green: valid)')
 lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
 
 # Last 50
@@ -306,15 +335,29 @@ ggplot(ws, aes(x=1:nrow(ws))) +
   geom_line(aes(y=w13, color='x1 --> x3')) + 
   geom_line(aes(y=w23, color='x2 --> x3')) + 
   geom_hline(aes(yintercept=2, color='x1 --> x2'), linetype=2) +
-  geom_hline(aes(yintercept=0.2, color='x1 --> x3'), linetype=2) +
-  geom_hline(aes(yintercept=-0.3, color='x2 --> x3'), linetype=2) +
+  geom_hline(aes(yintercept=-0.2, color='x1 --> x3'), linetype=2) +
+  geom_hline(aes(yintercept=+0.3, color='x2 --> x3'), linetype=2) +
   #scale_color_manual(values=c('x1 --> x2'='skyblue', 'x1 --> x3='red', 'x2 --> x3'='darkgreen')) +
   labs(x='Epoch', y='Coefficients') +
   theme_minimal() +
   theme(legend.title = element_blank())  # Removes the legend title
   
 
-param_model$evaluate(x = train$df_orig, y=train$df_scaled)
+param_model$evaluate(x = train$df_orig, y=train$df_scaled) #Does not work, probably TF Eager vs Compiled
+# One more step to estimate NLL
+if (FALSE){
+  vals = NULL
+  for (i in 1:10){
+    test  = dgp(40000, i+10001)
+    hist = param_model$fit(x = train$df_orig, y = train$df_orig, 
+                    epochs = 1L, verbose = TRUE, 
+                    validation_data = list(test$df_orig,test$df_orig))
+    vals = append(vals, hist$history$val_loss)
+  }
+  t.test(vals)
+  M32
+  F32
+}
 fn
 len_theta
 param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
@@ -327,21 +370,21 @@ Xs = r$Xs
 h_I = r$h_I
 
 ##### X1
-fit.1 = Colr(X1~1,df)
+fit.1 = Colr(X1~1,df, order=len_theta)
 plot(fit.1, which = 'baseline only', main='Black: COLR, Red: Our Model')
 lines(Xs[,1], h_I[,1], col='red', lty=2, lwd=3)
 rug(train$df_orig$numpy()[,1], col='blue')
 
 
 df = data.frame(train$df_orig$numpy())
-fit.21 = Colr(X2~X1,df)
+fit.21 = Colr(X2~X1,df, order=len_theta)
 temp = model.frame(fit.21)[1:2,-1, drop=FALSE] #WTF!
 plot(fit.21, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
      main='h_I(X2) Black: COLR, Red: Our Model', cex.main=0.8)
 lines(Xs[,2], h_I[,2], col='red', lty=2, lwd=5)
 rug(train$df_orig$numpy()[,2], col='blue')
 
-fit.312 = Colr(X3 ~ X1 + X2,df)
+fit.312 = Colr(X3 ~ X1 + X2,df, order=len_theta)
 temp = model.frame(fit.312)[1:2, -1, drop=FALSE] #WTF!
 
 plot(fit.312, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
@@ -366,24 +409,28 @@ if (FALSE){
 }
 
 ##### Checking observational distribution ####
+library(car)
 s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 5000)
 par(mfrow=c(1,3))
 for (i in 1:3){
   d = s[,i]$numpy()
   hist(train$df_orig$numpy()[,i], freq=FALSE, 100,main=paste0("X",i, " red: ours, black: data"), xlab='samples')
+  lines(density(train$df_orig$numpy()[,i]), col='blue')
   #hist(train$df_orig$numpy()[,i], freq=FALSE, 100,main=paste0("X_",i))
   lines(density(s[,i]$numpy()), col='red')
+  #qqplot(train$df_orig$numpy()[,i], s[,i]$numpy())
+  #abline(0,1)
 }
 par(mfrow=c(1,1))
 
 ######### Simulation of do-interventions #####
 doX=c(0.2, NA, NA)
-dx0.2 = dgp(10000, doX=doX)
+dx0.2 = dgp(10000, doX=doX, seed=SEED)
 dx0.2$df_orig$numpy()[1:5,]
 
 
 doX=c(0.7, NA, NA)
-dx7 = dgp(10000, doX=doX)
+dx7 = dgp(10000, doX=doX, seed=SEED)
 #hist(dx0.2$df_orig$numpy()[,2], freq=FALSE,100)
 mean(dx7$df_orig$numpy()[,2]) - mean(dx0.2$df_orig$numpy()[,2])  
 mean(dx7$df_orig$numpy()[,3]) - mean(dx0.2$df_orig$numpy()[,3])  
@@ -465,7 +512,7 @@ delta_0 = shift1[idx0] - 0
 plot(xs, shift1 - delta_0, main='LS-Term (black DGP, red Ours)', 
      sub = paste0('Effect of x1 on x3, delta_0 ', round(delta_0,2)),
      xlab='x1', col='red')
-abline(0, .2)
+abline(0, -.2)
 
 
 if (F32 == 1){ #Linear DGP
@@ -475,27 +522,27 @@ if (F32 == 1){ #Linear DGP
          sub = paste0('Effect of x2 on x3, delta_0 ', round(delta_0,2)),
          xlab='x2', col='red')
     #abline(shift_23[length(shift_23)/2], -0.3)
-    abline(0, -0.3)
+    abline(0, 0.3)
   } 
   if (MA[2,3] == 'cs'){
     plot(xs, cs_23, main='CS-Term (black DGP, red Ours)', xlab='x2',  
          sub = 'Effect of x2 on x3',col='red')
     
-    abline(cs_23[idx0], -0.3)  
+    abline(cs_23[idx0], 0.3)  
   }
 } else{ #Non-Linear DGP
   if (MA[2,3] == 'ls'){
-    delta_0 = shift_23[idx0] - f(0)
+    delta_0 = shift_23[idx0] + f(0)
     plot(xs, shift_23 - delta_0, main='LS-Term (black DGP, red Ours)', 
          sub = paste0('Effect of x2 on x3, delta_0 ', round(delta_0,2)),
          xlab='x2', col='red')
-    lines(xs, f(xs))
+    lines(xs, -f(xs))
   } else if (MA[2,3] == 'cs'){
-    plot(xs, cs_23 + ( -cs_23[idx0] + f(0) ),
+    plot(xs, cs_23 + ( -cs_23[idx0] - f(0) ),
          ylab='CS',
          main='CS-Term (black DGP f2(x), red Ours)', xlab='x2',  
          sub = 'Effect of x2 on x3',col='red')
-    lines(xs, f(xs))
+    lines(xs, -f(xs))
   } else{
     print(paste0("Unknown Model ", MA[2,3]))
   }
@@ -530,48 +577,70 @@ cont_ord = which(data_type == 'o') #3
 #### At least one continuous dimension exits
 h_I = h_dag_extra(t_i[,cont_dims, drop=FALSE], theta[,cont_dims,1:len_theta,drop=FALSE], k_min[cont_dims], k_max[cont_dims]) 
 
-h_12 = h_I + h_LS[,cont_dims, drop=FALSE] + h_CS[,cont_dims, drop=FALSE]
-
-### Ordingal Dimensions
-B = tf$shape(t_i)[1]
-col = 3
-nol = tf$cast(k_max[col] - 1L, tf$int32) # Number of cut-points in respective dimension
-theta_ord = theta[,col,1:nol,drop=TRUE] # Intercept
-h_3 = theta_ord + h_LS[,col, drop=FALSE] + h_CS[,col, drop=FALSE]
+h = h_I + h_LS[,cont_dims, drop=FALSE] + h_CS[,cont_dims, drop=FALSE]
 
 ####### DGP Transformations #######
 X_1 = t_i[,1]$numpy()
 X_2 = t_i[,2]$numpy()
+X_3 = t_i[,3]$numpy()
+
+#h2 = x_2_dash = 5 * x_2 + 2 * X_1
 h2_DGP = 5 *X_2 + 2 * X_1
-plot(h2_DGP[1:2000], h_12[1:2000,2]$numpy())
+h2_DGP_LS = 2 * X_1
+h2_DGP_CS = rep(0, length(X_2))
+h2_DGP_I = 5 * X_2
+
+#h(x3|x1,x2) = 0.63*x3 - 0.2*x1 - f(x2)
+h3_DGP = 0.63*X_3 - 0.2*X_1 - f(X_2)
+h3_DGP_LS = -0.2*X_1
+h3_DGP_CS = -f(X_2)
+h3_DGP_I = 0.63*X_3
+
+
+par(mfrow=c(2,2))
+plot(h2_DGP, h[,2]$numpy(), main='h2')
 abline(0,1,col='red')
+confint(lm(h[,2]$numpy() ~ h2_DGP))
 
-h2_DGP_I = 5*X_2
-h2_M_I = h_I[,2]
-
-plot(h2_DGP_I, h2_M_I)
+#Same for Intercept
+plot(h2_DGP_I, h_I[,2]$numpy(), main='h2_I')
 abline(0,1,col='red')
+confint(lm(h_I[,2]$numpy() ~ h2_DGP_I))
 
-h_3 #Model
+plot(h2_DGP_LS, h_LS[,2]$numpy(), main='h2_LS')
+abline(0,1,col='red')
+confint(lm(h_LS[,2]$numpy() ~ h2_DGP_LS))
 
-##### DGP 
-theta_k = c(-2, 0.42, 1.02)
-n_obs = B$numpy()
-h_3_DPG = matrix(, nrow=n_obs, ncol=3)
-for (i in 1:n_obs){
-  h_3_DPG[i,] = theta_k + 0.2 * X_1[i] + f(X_2[i]) #- 0.3 * X_2[i]
-}
+#Same for CS
+plot(h2_DGP_CS, h_CS[,2]$numpy(), main='h2_CS')
+abline(0,1,col='red')
+confint(lm(h_CS[,2]$numpy() ~ h2_DGP_CS))
 
-plot(h_3_DPG[1:2000,3], h_3[1:2000,3]$numpy())
-abline(0,1,col='green')
+par(mfrow=c(1,1))
 
-#LS
-plot(-0.2*X_1, h_LS[,3]$numpy())
-abline(0,1,col='green')
 
-#LS
-plot(f(X_2), h_CS[,3]$numpy())
-abline(0,1,col='green')
+par(mfrow=c(2,2))
+
+plot(h3_DGP, h[,3]$numpy(), main='h3')
+abline(0,1,col='red')
+confint(lm(h[,3]$numpy() ~ h3_DGP))
+
+plot(h3_DGP_I, h_I[,3]$numpy(), main='h3_I')
+abline(0,1,col='red')
+confint(lm(h_I[,3]$numpy() ~ h3_DGP_I))
+
+#same for ls  
+plot(h3_DGP_LS, h_LS[,3]$numpy(), main='h3_LS')
+abline(0,1,col='red')
+confint(lm(h_LS[,3]$numpy() ~ h3_DGP_LS))
+
+#same for CS
+plot(h3_DGP_CS, h_CS[,3]$numpy(), main='h3_CS')
+abline(0,1,col='red')
+confint(lm(h_CS[,3]$numpy() ~ h3_DGP_CS))
+
+par(mfrow=c(1,1))
+
 }
 
 
