@@ -6,7 +6,7 @@ reticulate::py_config()
 # Get command-line arguments - if called via sh
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) == 0) {  # if not called via sh
-  args <- c(4, 'cs')
+  args <- c(4, 'ls') 
 }
 F32 <- as.numeric(args[1])
 M32 <- args[2]
@@ -43,7 +43,7 @@ len_theta = 20 # Number of coefficients of the Bernstein polynomials
 hidden_features_I = c(2,25,25,2)    #hidden_features_CS=hidden_features_I = c(2,25,25,2)
 hidden_features_CS = c(2,25,25,2)
 
-SEED = 1 #If seed > 0 then the seed is set
+SEED = -1 #If seed > 0 then the seed is set
 
 if (F32 == 1){
   FUN_NAME = 'DPGLinear'
@@ -341,7 +341,62 @@ ggplot(ws, aes(x=1:nrow(ws))) +
   labs(x='Epoch', y='Coefficients') +
   theme_minimal() +
   theme(legend.title = element_blank())  # Removes the legend title
+
+if (FALSE){
+  p = ggplot(ws, aes(x=1:nrow(ws))) + 
+    geom_line(aes(y=w12, color="beta12")) + 
+    geom_line(aes(y=w13, color="beta13")) + 
+    #geom_line(aes(y=w23, color="beta23")) + 
+    geom_hline(aes(yintercept=2, color="beta12"), linetype=2) +
+    geom_hline(aes(yintercept=-0.2, color="beta13"), linetype=2) +
+    #geom_hline(aes(yintercept=+0.3, color="beta23"), linetype=2) +
+    scale_color_manual(
+      values=c('beta12'='skyblue', 'beta13'='red'),
+      labels=c(expression(beta[12]), expression(beta[13]))
+    ) +
+    labs(x='Epoch', y='Coefficients') +
+    theme_minimal() +
+    theme(
+      legend.title = element_blank(),   # Removes the legend title
+      legend.position = c(0.85, 0.25),  # Adjust this to position the legend inside the plot (lower-right)
+      legend.background = element_rect(fill="white", colour="black")  # Optional: white background with border
+    )
   
+  file_name <- paste0(fn, "_coef_epoch.pdf")
+  # Save the plot
+  ggsave(file_name, plot = p, width = 8, height = 6)
+  file_path <- file.path("/Users/oli/Library/CloudStorage/Dropbox/Apps/Overleaf/tramdag/figures", basename(file_name))
+  ggsave(file_path, plot = p, width = 8/2, height = 6/2)
+}
+
+if (FALSE){
+# Creating the figure for the paper 
+# triangle_mixed_DPGLinear_ModelLS_coef_epoch 
+  p = ggplot(ws, aes(x=1:nrow(ws))) + 
+    geom_line(aes(y=w12, color="beta12")) + 
+    geom_line(aes(y=w13, color="beta13")) + 
+    geom_line(aes(y=w23, color="beta23")) + 
+    geom_hline(aes(yintercept=2, color="beta12"), linetype=2) +
+    geom_hline(aes(yintercept=-0.2, color="beta13"), linetype=2) +
+    geom_hline(aes(yintercept=+0.3, color="beta23"), linetype=2) +
+    scale_color_manual(
+      values=c('beta12'='skyblue', 'beta13'='red', 'beta23'='darkgreen'),
+      labels=c(expression(beta[12]), expression(beta[13]), expression(beta[23]))
+    ) +
+    labs(x='Epoch', y='Coefficients') +
+    theme_minimal() +
+    theme(
+      legend.title = element_blank(),   # Removes the legend title
+      legend.position = c(0.85, 0.25),  # Adjust this to position the legend inside the plot (lower-right)
+      legend.background = element_rect(fill="white", colour="black")  # Optional: white background with border
+    )
+  
+  file_name <- paste0(fn, "_coef_epoch.pdf")
+  # Save the plot
+  ggsave(file_name, plot = p, width = 8, height = 6)
+  file_path <- file.path("/Users/oli/Library/CloudStorage/Dropbox/Apps/Overleaf/tramdag/figures", basename(file_name))
+  ggsave(file_path, plot = p, width = 8/2, height = 6/2)
+}
 
 param_model$evaluate(x = train$df_orig, y=train$df_scaled) #Does not work, probably TF Eager vs Compiled
 # One more step to estimate NLL
@@ -501,8 +556,71 @@ for (i in 1:length(xs)){
   shift_23[i] = param_model(X)[1,3,2]$numpy() #2-LS Term X2-->X3 (Beate Notation)
 }
 
-par(mfrow=c(2,2))
+if (FALSE){
+  if (MA[2,3] == 'cs' && F32 == 1){
+    # Assuming xs, cs_23, and idx0 are predefined vectors
+    # Create a data frame for the ggplot
+    df <- data.frame(x2 = xs, cs_23 = cs_23)
+    
+    # Create the ggplot
+    p <- ggplot(df, aes(x = x2, y = cs_23)) +
+      geom_line(aes(color = "Complex Shift Estimate"), size = 1) +  
+      geom_point(aes(color = "Complex Shift Estimate"), size = 1) + 
+      geom_abline(aes(color = "f"), intercept = cs_23[idx0], slope = 0.3, size = 1) +  # Black solid line for 'DGP'
+      scale_color_manual(
+        values = c("Complex Shift Estimate" = "blue", "f" = "black"),  # Set colors
+        labels = c("Complex Shift Estimate", "f(x)")  # Custom legend labels with expression for f(X_2)
+      ) +
+      labs(
+        x = expression(x[2]),  # Subscript for x_2
+        y = "~f(x)",  # Optionally leave y-axis label blank
+        color = NULL  # Removes the color legend title
+      ) +
+      theme_minimal() +
+      theme(legend.position = "none")  # Correct way to remove the legend
+    
+    # Display the plot
+    p
+  } else if (MA[2,3] == 'cs' && F32 != 1){
+    # Assuming xs, shift_23, and idx0 are predefined vectors
+    # Create a data frame for the ggplot
+    df <- data.frame(x2 = xs, 
+                     shift_23 = cs_23 + ( -cs_23[idx0] - f(0)),
+                     f = -f(xs)
+                     )
+    # Create the ggplot
+    p <- ggplot(df, aes(x = x2, y = shift_23)) +
+      #geom_line(aes(color = "Shift Estimate"), size = 1) +  # Blue line for 'Shift Estimate'
+      geom_point(aes(color = "Shift Estimate"), size = 1) +  # Blue points for 'Shift Estimate'
+      geom_line(aes(color = "f", y = f), ) +  # Black solid line for 'DGP'
+      scale_color_manual(
+        values = c("Shift Estimate" = "blue", "f" = "black"),  # Set colors
+        labels = c("Shift Estimate", "f(x)")  # Custom legend labels with expression for f(X_2)
+      ) +
+      labs(
+        x = expression(x[2]),  # Subscript for x_2
+        y = "~f(x)",  # Optionally leave y-axis label blank
+        color = NULL  # Removes the color legend title
+      ) +
+      theme_minimal() +
+      theme(legend.position = "none")  # Correct way to remove the legend
+    
+    # Display the plot
+    p
+  } else{
+    print(paste0("Unknown Model ", MA[2,3]))
+  }
+ 
+  
+  file_name <- paste0(fn, "_f23_est.pdf")
+  # Save the plot
+  ggsave(file_name, plot = p, width = 8, height = 8)
+  file_path <- file.path("/Users/oli/Library/CloudStorage/Dropbox/Apps/Overleaf/tramdag/figures", basename(file_name))
+  ggsave(file_path, plot = p, width = 8/3, height = 8/3)
+}
+    
 
+par(mfrow=c(2,2))
 plot(xs, shift_12, main='LS-Term (black DGP, red Ours)', 
      sub = 'Effect of x1 on x2',
      xlab='x1', col='red')

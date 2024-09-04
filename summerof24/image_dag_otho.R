@@ -8,9 +8,8 @@ fn = 'summerof24/image_keras.h5'
 library(mlt)
 library(tram)
 library(MASS)
-library(tensorflow)
 library(keras)
-library(tidyverse)
+library(tensorflow)
 library(tidyverse)
 source('summerof24/utils_tf.R')
 
@@ -228,11 +227,6 @@ cnn_input <- layer_input(shape = input_shape)
 
 conv1 <- layer_conv_2d(filters = 8, kernel_size = c(3, 3), activation = 'relu')(cnn_input)
 
-#### OZ-Layer <---   TODO CHECK #####
-extract_columns_layer <- layer_lambda(f=function(x) x[, 1:2])
-redinfo <- extract_columns_layer(tabular_model$input)
-conv1 = ozlayer(conv1, redinfo)
-
 pool1 <- layer_max_pooling_2d(pool_size = c(2, 2))(conv1)
 dropout1 <- layer_dropout(rate = 0.35)(pool1)
 
@@ -242,6 +236,12 @@ pool2 <- layer_max_pooling_2d(pool_size = c(2, 2))(conv2)
 dropout2 <- layer_dropout(rate = 0.35)(pool2)
 
 flatten <- layer_flatten()(dropout2)
+
+#### OZ-Layer <---   TODO CHECK #####
+extract_columns_layer <- layer_lambda(f=function(x) x[, 1:2])
+redinfo <- extract_columns_layer(tabular_model$input)
+flatten = ozlayer(flatten, redinfo)
+
 
 dense1 <- layer_dense(units = 30, activation = 'relu')(flatten)
 dropout <- layer_dropout(rate = 0.35)(dense1)

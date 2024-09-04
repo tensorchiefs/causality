@@ -65,6 +65,7 @@ dgp <- function(n_obs, b_labels=NULL) {
   a2 = 0.03 * scale_effect_size
   a4 = 1.0
   #u3 = h(x3|x1,x2,B) = h_0(x3) + eta(B) + a1*x1 + a2*x2 + a4*x4
+  #u3 = h(x3|x1,x2,B) = h_0(x3) + a1*x1 + a2*x2 + a4*x4
   #h_0(x3) = 0.21 * x3 
   #etaB = sqrt(b_labels) #Effect
   x3 =  (u3 - a1*x1 - a2*x2 - a4*x4)/0.21

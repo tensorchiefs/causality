@@ -42,7 +42,6 @@ R/hidden_confounder_lin
 .DS_Store
 data/CAREFL_CF/Readme_files/*
 data/VACA1_triangle_lin/attick/*
-*.h5
 /tmp_oliver
 
 
@@ -54,3 +53,4 @@ summerof24/Readme.html
 summerof24/Orthogonalisation/Orthogonalization.html
 /summerof24/Orthogonalisation/Orthogonalization_files
 /summerof24/temp_runs
+/non_checkin_runs
