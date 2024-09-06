@@ -6,7 +6,7 @@ reticulate::py_config()
 # Get command-line arguments - if called via sh
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) == 0) {  # if not called via sh
-  args <- c(4, 'ls') 
+  args <- c(5, 'cs') 
 }
 F32 <- as.numeric(args[1])
 M32 <- args[2]
@@ -57,6 +57,9 @@ if (F32 == 1){
 } else if (F32 == 4){
   f = function(x) 0.75*atan(5*(x+0.12)) 
   FUN_NAME = 'DPGatan'
+} else if (F32 == 5){
+  f = function(x) 2*sin(3*x)+x 
+  FUN_NAME = 'DPGSin'
 } else {
   stop("Unknown Function F32")
 }
@@ -669,7 +672,7 @@ if (F32 == 1){ #Linear DGP
 par(mfrow=c(1,1))
 
 
-if (FALSE){
+if (TRUE){
 ####### Compplete transformation Function #######
 ### Copied from structured DAG Loss
 t_i = train$df_orig
