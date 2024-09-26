@@ -1,4 +1,12 @@
 #### Reproducing figure 5 with our code #####
+
+##### Oliver's MAC ####
+reticulate::use_python("/Users/oli/miniforge3/envs/r-tensorflow/bin/python3.8", required = TRUE)
+library(reticulate)
+reticulate::py_config()
+
+library(tfprobability)
+
 library(R.utils)
 source('R/tram_dag/utils.R')
 DEBUG = FALSE

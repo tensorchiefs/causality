@@ -326,6 +326,36 @@ ggplot(ws, aes(x=1:nrow(ws))) +
   theme(legend.title = element_blank())  # Removes the legend title
   
 
+###### Coefficient Plot for Paper #######
+if (FALSE){
+  p = ggplot(ws, aes(x=1:nrow(ws))) + 
+    geom_line(aes(y=w12, color="beta12")) + 
+    geom_line(aes(y=w13, color="beta13")) + 
+    geom_line(aes(y=w23, color="beta23")) + 
+    geom_hline(aes(yintercept=2, color="beta12"), linetype=2) +
+    geom_hline(aes(yintercept=0.2, color="beta13"), linetype=2) +
+    geom_hline(aes(yintercept=-0.3, color="beta23"), linetype=2) +
+    scale_color_manual(
+      values=c('beta12'='skyblue', 'beta13'='red', 'beta23'='darkgreen'),
+      labels=c(expression(beta[12]), expression(beta[13]), expression(beta[23]))
+    ) +
+    labs(x='Epoch', y='Coefficients') +
+    theme_minimal() +
+    theme(
+      legend.title = element_blank(),   # Removes the legend title
+      legend.position = c(0.85, 0.17),  # Adjust this to position the legend inside the plot (lower-right)
+      legend.background = element_rect(fill="white", colour="black")  # Optional: white background with border
+    )
+  
+  p
+  file_name <- paste0(fn, "_coef_epoch.pdf")
+  # Upload to Overleave
+  ggsave(file_name, plot = p, width = 8, height = 6)
+  
+  file_path <- file.path("/Users/oli/Library/CloudStorage/Dropbox/Apps/Overleaf/tramdag/figures", basename(file_name))
+  ggsave(file_path, plot = p, width = 8/2, height = 6/2)
+}
+
 param_model$evaluate(x = train$df_orig, y=train$df_scaled)
 fn
 len_theta
@@ -383,7 +413,6 @@ if (FALSE){
 
 ##### Checking observational distribution ####
 s = do_dag_struct(param_model, train$A, doX=c(NA, NA, NA), num_samples = 5000)
-
 plot(table(train$df_R[,3])/sum(table(train$df_R[,3])), ylab='Probability ', 
      main='Black = Observations, Red samples from TRAM-DAG',
      xlab='X3')
@@ -391,12 +420,18 @@ table(train$df_R[,3])/sum(table(train$df_R[,3]))
 points(as.numeric(table(s[,3]$numpy()))/5000, col='red', lty=2)
 table(s[,3]$numpy())/5000
 
-par(mfrow=c(1,2))
+par(mfrow=c(1,3))
 for (i in 1:2){
   hist(train$df_orig$numpy()[,i], freq=FALSE, 100,main=paste0("X",i, " red: ours, black: data"), xlab='samples')
   #hist(train$df_orig$numpy()[,i], freq=FALSE, 100,main=paste0("X_",i))
   lines(density(s[,i]$numpy()), col='red')
 }
+plot(table(train$df_R[,3])/sum(table(train$df_R[,3])), ylab='Probability ', 
+     main='Black = Observations, Red samples from TRAM-DAG',
+     xlab='X3')
+table(train$df_R[,3])/sum(table(train$df_R[,3]))
+points(as.numeric(table(s[,3]$numpy()))/5000, col='red', lty=2)
+table(s[,3]$numpy())/5000
 par(mfrow=c(1,1))
 
 ######### Simulation of do-interventions #####
@@ -452,13 +487,67 @@ sample_dag_0.2 = s_dag[,2]$numpy()
 lines(density(sample_dag_0.2), col='red', lw=2)
 m_x2_do_x10.2 = median(sample_dag_0.2)
 
-
 i = 3 
 d = dx0.2$df_orig$numpy()[,i]
 plot(table(d)/length(d), ylab='Probability ', 
      main='X3 | do(X1=0.2)',
      xlab='X3', ylim=c(0,0.6),  sub='Black DGP with do. red:TRAM_DAG')
 points(as.numeric(table(s_dag[,3]$numpy()))/nrow(s_dag), col='red', lty=2)
+
+###### Figure for paper ######
+if (FALSE){
+  doX=c(NA, NA, NA)
+  s_obs_fitted = do_dag_struct(param_model, train$A, doX, num_samples = 5000)$numpy()
+  dx1 = -1
+  doX=c(dx1, NA, NA)
+  s_do_fitted = do_dag_struct(param_model, train$A, doX=doX)$numpy()
+  
+  df = data.frame(vals=s_obs_fitted[,1], type='Model', X=1, L='L0')
+  df = rbind(df, data.frame(vals=s_obs_fitted[,2], type='Model', X=2, L='L0'))
+  df = rbind(df, data.frame(vals=s_obs_fitted[,3], type='Model', X=3, L='L0'))
+  
+  df = rbind(df, data.frame(vals=train$df_R[,1], type='DGP', X=1, L='L0'))
+  df = rbind(df, data.frame(vals=train$df_R[,2], type='DGP', X=2, L='L0'))
+  df = rbind(df, data.frame(vals=as.numeric(train$df_R[,3]), type='DGP', X=3, L='L0'))
+  
+  df = rbind(df, data.frame(vals=s_do_fitted[,1], type='Model', X=1, L='L1'))
+  df = rbind(df, data.frame(vals=s_do_fitted[,2], type='Model', X=2, L='L1'))
+  df = rbind(df, data.frame(vals=s_do_fitted[,3], type='Model', X=3, L='L1'))
+  
+  d = dgp(10000, doX=doX)$df_R
+  df = rbind(df, data.frame(vals=d[,1], type='DGP', X=1, L='L1'))
+  df = rbind(df, data.frame(vals=d[,2], type='DGP', X=2, L='L1'))
+  df = rbind(df, data.frame(vals=as.numeric(d[,3]), type='DGP', X=3, L='L1'))
+
+  p = ggplot() +
+    # For X = 1 and X = 2, use position = "identity" (no dodging)
+    geom_histogram(data = subset(df, X != 3), 
+                   aes(x=vals, col=type, fill=type, y=..density..), 
+                   position = "identity", alpha=0.4) +
+    # For X = 3, use a bar plot for discrete data
+    geom_bar(data = subset(df, X == 3), 
+             aes(x=vals, y=..prop.. * 4,  col=type, fill=type), 
+             position = "dodge", alpha=0.4, size = 0.5)+
+    #limit between 0,1 but not removing the data
+    coord_cartesian(ylim = c(0, 4)) +
+    facet_grid(L ~ X, scales = 'free',
+               labeller = as_labeller(c('1' = 'X1', '2' = 'X2', '3' = 'X3', 'L1' = paste0('Do X1=',dx1), 'L0' = 'Obs')))+ 
+    labs(y = "Density / (Frequency × 4)", x='')  + # Update y-axis label
+    theme_minimal() +
+    theme(
+      legend.title = element_blank(),   # Removes the legend title
+      legend.position = c(0.17, 0.25),  # Adjust this to position the legend inside the plot (lower-right)
+      legend.background = element_rect(fill="white", colour="white")  # Optional: white background with border
+    )
+  p
+  file_name <- paste0(fn, "_L0_L1.pdf")
+  ggsave(file_name, plot=p, width = 8, height = 6)
+  file_path <- file.path("/Users/oli/Library/CloudStorage/Dropbox/Apps/Overleaf/tramdag/figures", basename(file_name))
+  ggsave(file_path, plot=p, width = 8/2, height = 6/2)
+ 
+}
+
+
 
 
 s_dag = do_dag_struct(param_model, train$A, doX=c(0.7, NA, NA))

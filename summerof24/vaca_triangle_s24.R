@@ -3,15 +3,6 @@ reticulate::use_python("/Users/oli/miniforge3/envs/r-tensorflow/bin/python3.8", 
 library(reticulate)
 reticulate::py_config()
 
-# Get command-line arguments - if called via sh
-args <- commandArgs(trailingOnly = TRUE)
-if (length(args) == 0) {  # if not called via sh
-  args <- c(1, 'cs') 
-}
-F32 <- as.numeric(args[1])
-M32 <- args[2]
-print(paste("F32:", F32, "M32:", M32))
-
 
 #### A mixture of discrete and continuous variables ####
 library(tensorflow)
@@ -27,133 +18,66 @@ source('summerof24/utils_tf.R')
 #### For TFP
 library(tfprobability)
 source('summerof24/utils_tfp.R')
-
 ##### Flavor of experiment ######
 
 #### Saving the current version of the script into runtime
-DIR = 'summerof24/runs/triangle_structured_continous/run_nodes25'
+DIR = 'summerof24/runs/vaca_triangle/run_1'
 if (!dir.exists(DIR)) {
   dir.create(DIR, recursive = TRUE)
 }
 # Copy this file to the directory DIR
-file.copy('summerof24/triangle_structured_continous.R', file.path(DIR, 'triangle_structured_continous.R'), overwrite=TRUE)
+file.copy('summerof24/vaca_triangle_s24.R', file.path(DIR, 'vaca_triangle_s24.R'), overwrite=TRUE)
 
-num_epochs <- 500
-len_theta = 20 # Number of coefficients of the Bernstein polynomials
+num_epochs <- 10000L
+len_theta = 30 # Number of coefficients of the Bernstein polynomials
 hidden_features_I = c(2,25,25,2)    #hidden_features_CS=hidden_features_I = c(2,25,25,2)
 hidden_features_CS = c(2,25,25,2)
 
 SEED = -1 #If seed > 0 then the seed is set
 
-if (F32 == 1){
-  FUN_NAME = 'DPGLinear'
-  f <- function(x) -0.3 * x
-} else if (F32 == 2){
-  f = function(x) 2 * x**3 + x
-  FUN_NAME = 'DPG2x3+x'
-} else if (F32 == 3){
-  f = function(x) 0.5*exp(x)
-  FUN_NAME = 'DPG0.5exp'
-} else if (F32 == 4){
-  f = function(x) 0.75*atan(5*(x+0.12)) 
-  FUN_NAME = 'DPGatan'
-} else if (F32 == 5){
-  f = function(x) 2*sin(3*x)+x 
-  FUN_NAME = 'DPGSin'
-} else {
-  stop("Unknown Function F32")
-}
 
-# xs = seq(-1,1,0.1)
-# f = function(x) 2 * x**3 + 0.1*(x-.5)**5
-if (FALSE){
-  f = function(x) 0.75*atan(5*(x+0.12)) 
-  plot(xs, f(xs))
-  s=train$df_R$x2
-  hist(s, freq=FALSE, 100)
-  hist(f(s), freq=FALSE, 100)
-}
-
-if (M32 == 'ls') {
-  MA =  matrix(c(
-    0, 'ls', 'ls', 
-    0,    0, 'ls', 
-    0,    0,   0), nrow = 3, ncol = 3, byrow = TRUE)
-  MODEL_NAME = 'ModelLS'
-} else{
-  MA =  matrix(c(
-    0, 'ls', 'ls', 
-    0,    0, 'cs', 
-    0,    0,   0), nrow = 3, ncol = 3, byrow = TRUE)
-  MODEL_NAME = 'ModelCS'
-}
+MA =  matrix(c(
+  0, 'ci', 'ci', 
+  0,    0, 'ci', 
+  0,    0,   0), nrow = 3, ncol = 3, byrow = TRUE)
+MODEL_NAME = 'ModelCI'
 
 
 # fn = 'triangle_mixed_DGPLinear_ModelLinear.h5'
 # fn = 'triangle_mixed_DGPSin_ModelCS.h5'
 
 if (SEED < 0){
-  fn = file.path(DIR, paste0('triangle_mixed_', FUN_NAME, '_', MODEL_NAME))
+  fn = file.path(DIR, paste0('vaca_triangle', '_', MODEL_NAME))
 } else{
-  fn = file.path(DIR, paste0('triangle_mixed_', FUN_NAME, '_', MODEL_NAME, '_SEED', SEED))
+  fn = file.path(DIR, paste0('vaca_triangle', FUN_NAME, '_', MODEL_NAME, '_SEED', SEED))
 }
 print(paste0("Starting experiment ", fn))
    
-xs = seq(-1,1,0.1)
-
-plot(xs, -f(xs), sub=fn, xlab='x2', ylab='f(x2)', main='DGP influence of x2 on x3', cex.sub=0.4)
 ##### DGP ########
 dgp <- function(n_obs, doX=c(NA, NA, NA), seed=-1) {
     if (seed > 0) {
       set.seed(seed)
       print(paste0("Setting Seed:", seed))
     }
-    #n_obs = 1e5 n_obs = 10
-    #Sample X_1 from GMM with 2 components
-    if (is.na(doX[1])){
-      X_1_A = rnorm(n_obs, 0.25, 0.1)
-      X_1_B = rnorm(n_obs, 0.73, 0.05)
-      X_1 = ifelse(sample(1:2, replace = TRUE, size = n_obs) == 1, X_1_A, X_1_B)
-    } else{
-      X_1 = rep(doX[1], n_obs)
+    print("=== Using the DGP of the VACA1 paper in the linear Fashion (Tables 5/6)")
+    flip = sample(c(0,1), n_obs, replace = TRUE)
+    X_1 = flip*rnorm(n_obs, -2, sqrt(1.5)) + (1-flip) * rnorm(n_obs, 1.5, 1)
+    if (is.na(doX[1]) == FALSE){
+      X_1 = X_1 * 0 + doX[1]
     }
-    #hist(X_1)
-    
-    # Sampling according to colr
-    if (is.na(doX[2])){
-      U2 = runif(n_obs)
-      
-      x_2_dash = qlogis(U2)
-      #x_2_dash = h_0(x_2) + beta * X_1
-      X_2 = 1/0.42 * (x_2_dash - 2 * X_1)
-      X_2 = 1/5. * (x_2_dash - 0.4 * X_1) # 0.39450
-      X_2 = 1/5. * (x_2_dash - 1.2 * X_1) 
-      #h2 = x_2_dash = 5 * x_2 + 2 * X_1
-      X_2 = 1/5. * (x_2_dash - 2 * X_1)  # 
-      
-      
-    } else{
-      X_2 = rep(doX[2], n_obs)
+    X_2 = -X_1 + rnorm(n_obs)
+    if (is.na(doX[2]) == FALSE){
+      X_2 = X_2 * 0 + doX[2]
     }
-    
-    #hist(X_2)
-    #ds = seq(-5,5,0.1)
-    #plot(ds, dlogis(ds))
-    if (is.na(doX[3])){
-      U3 = runif(n_obs)
-      x_3_dash = qlogis(U3)
-      #h(x3|x1,x2) = 0.63*x3 - 0.2*x1 - f(x2)
-      #x_3_dash = h_0_3(x_3) + gamma_1 * X_1 + gamma_2 * X_2
-      #x_3_dash = 0.63 * x_3 -0.2 * X_1 + 1.3 * X_2
-      #x_3_dash = h(x3|x1,x2) = 0.63*x3 - 0.2*x1 - f(x2)
-      X_3 = (x_3_dash + 0.2 * X_1 + f(X_2))/0.63
-    } else{
-      X_3 = rep(doX[3], n_obs)
-    }
-    
-   
+    X_3 = X_1 + 0.25 * X_2 + rnorm(n_obs)
+  
+  
     #hist(X_3)
-    A <- matrix(c(0, 1, 1, 0,0,1,0,0,0), nrow = 3, ncol = 3, byrow = TRUE)
+    A <- matrix(c(
+      0,1,1,
+      0,0,1,
+      0,0,0
+    ), nrow = 3, ncol = 3, byrow = TRUE)
     dat.orig =  data.frame(x1 = X_1, x2 = X_2, x3 = X_3)
     dat.tf = tf$constant(as.matrix(dat.orig), dtype = 'float32')
     
@@ -173,31 +97,12 @@ dgp <- function(n_obs, doX=c(NA, NA, NA), seed=-1) {
       A=A))
 } 
 
-train = dgp(40000, seed=ifelse(SEED > 0, SEED, -1))
-test  = dgp(40000, seed=ifelse(SEED > 0, SEED + 1, -1))
+train = dgp(2500, seed=ifelse(SEED > 0, SEED, -1))
+test  = dgp(2500, seed=ifelse(SEED > 0, SEED + 1, -1))
 (global_min = train$min)
 (global_max = train$max)
 data_type = train$type
 
-
-
-#### Fitting Tram ######
-df = data.frame(train$df_orig$numpy())
-fit.orig = Colr(X2~X1, order=len_theta ,df)
-summary(fit.orig)
-confint(fit.orig) #Original
-#dd = predict(fit.orig, newdata = data.frame(X1 = 0.5), type = 'density')
-#x2s = as.numeric(rownames(dd))
-#plot(x2s, dd, type = 'l', col='red')
-
-#?predict.tram
-summary(fit.orig)
-confint(fit.orig) #Original 
-
-# Fitting Tram
-fit.orig = Colr(x3 ~ x1 + x2 ,order=len_theta ,train$df_R)
-summary(fit.orig)
-confint(fit.orig) #Original 
 
 len_theta_max = len_theta
 for (i in 1:nrow(MA)){ #Maximum number of coefficients (BS and Levels - 1 for the ordinal)
@@ -240,28 +145,6 @@ if (FALSE){
 }
 
 param_model = create_param_model(MA, hidden_features_I=hidden_features_I, len_theta=len_theta, hidden_features_CS=hidden_features_CS)
-
-
-# ######### DEBUG TRAINING FROM HAND #######
-# # Define the optimizer
-# optimizer <- tf$optimizers$Adam(lr=0.01)
-# # Define the number of epochs for training
-# num_epochs <- 10
-# for (epoch in 1:num_epochs) {
-#   with(tf$GradientTape(persistent = TRUE) %as% tape, {
-#     # Compute the model's prediction - forward pass
-#     h_params <- param_model(train$df_scaled)
-#     loss <- struct_dag_loss(train$df_scaled, h_params)
-#   })
-#   # Compute gradients
-#   gradients <- tape$gradient(loss, param_model$trainable_variables)
-#   # Apply gradients to update the model parameters
-#   optimizer$apply_gradients(purrr::transpose(list(gradients, param_model$trainable_variables)))
-#   # Print the loss every epoch or more frequently if desired
-#   print(paste("Epoch", epoch, ", Loss:", loss$numpy()))
-# }
-
-
 optimizer = optimizer_adam()
 param_model$compile(optimizer, loss=struct_dag_loss)
 param_model$evaluate(x = train$df_orig, y=train$df_orig, batch_size = 7L)
@@ -276,195 +159,28 @@ if (file.exists(fnh5)){
   # Quick Fix since loading global_min causes problem (no tensors as RDS)
   (global_min = train$min)
   (global_max = train$max)
-} else {
-  if (FALSE){ ### Full Training w/o diagnostics
-    hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = 200L,verbose = TRUE)
-    param_model$save_weights(fn)
-    plot(hist$epoch, hist$history$loss)
-    plot(hist$epoch, hist$history$loss, ylim=c(1.07, 1.2))
-  } else { ### Training with diagnostics
-    ws <- data.frame(w12 = numeric())
-    train_loss <- numeric()
-    val_loss <- numeric()
-    
-    # Training loop
-    for (e in 1:num_epochs) {
-      print(paste("Epoch", e))
-      hist <- param_model$fit(x = train$df_orig, y = train$df_orig, 
-                              epochs = 1L, verbose = TRUE, 
-                              validation_data = list(test$df_orig,test$df_orig))
-      
-      # Append losses to history
-      train_loss <- c(train_loss, hist$history$loss)
-      val_loss <- c(val_loss, hist$history$val_loss)
-      
-      # Extract specific weights
-      w <- param_model$get_layer(name = "beta")$get_weights()[[1]]
-      
-      ws <- rbind(ws, data.frame(w12 = w[1, 2], w13 = w[1, 3], w23 = w[2, 3]))
-    }
-    # Save the model
-    param_model$save_weights(fnh5)
-    save(train_loss, val_loss, train_loss, f, MA, len_theta,
-         hidden_features_I,
-         hidden_features_CS,
-         ws,
-         #global_min, global_max,
-         file = fnRdata)
-  }
+} else { #Training
+  hist = param_model$fit(x = train$df_orig, y=train$df_orig, epochs = num_epochs,verbose = TRUE)
+  plot(hist$epoch, hist$history$loss)
+  # Save the model
+  param_model$save_weights(fnh5)
+  train_loss = hist$history$loss
+  val_loss = hist$history$val_loss
+  save(val_loss, train_loss, MA, len_theta,
+       hidden_features_I,
+       hidden_features_CS,
+       #global_min, global_max,
+       file = fnRdata)
 }
+
 
 ####### FINISHED TRAINING #####
 #pdf(paste0('loss_',fn,'.pdf'))
 epochs = length(train_loss)
 plot(1:length(train_loss), train_loss, type='l', main='Training (black: train, green: valid)')
-lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
+plot(1:length(train_loss), train_loss, type='l', main='Training (black: train, green: valid)', xlim = c(9000,10000), ylim=c(1.65,1.72))
+#lines(1:length(train_loss), val_loss, type = 'l', col = 'green')
 
-# Last 50
-diff = max(epochs - 50,1)
-plot(diff:epochs, val_loss[diff:epochs], type = 'l', col = 'green', main='Last 50 epochs')
-lines(diff:epochs, train_loss[diff:epochs], type='l')
-
-# plot(1:epochs, ws[,1], type='l', main='Coef', ylim=c(-0.5, 3))#, ylim=c(0, 6))
-# abline(h=2, col='green')
-# lines(1:epochs, ws[,2], type='l', ylim=c(0, 3))
-# abline(h=0.2, col='green')
-# lines(1:epochs, ws[,3], type='l', ylim=c(0, 3))
-# abline(h=-0.3, col='green')
-
-
-ggplot(ws, aes(x=1:nrow(ws))) + 
-  geom_line(aes(y=w12, color='x1 --> x2')) + 
-  geom_line(aes(y=w13, color='x1 --> x3')) + 
-  geom_line(aes(y=w23, color='x2 --> x3')) + 
-  geom_hline(aes(yintercept=2, color='x1 --> x2'), linetype=2) +
-  geom_hline(aes(yintercept=-0.2, color='x1 --> x3'), linetype=2) +
-  geom_hline(aes(yintercept=+0.3, color='x2 --> x3'), linetype=2) +
-  #scale_color_manual(values=c('x1 --> x2'='skyblue', 'x1 --> x3='red', 'x2 --> x3'='darkgreen')) +
-  labs(x='Epoch', y='Coefficients') +
-  theme_minimal() +
-  theme(legend.title = element_blank())  # Removes the legend title
-
-if (FALSE){
-  p = ggplot(ws, aes(x=1:nrow(ws))) + 
-    geom_line(aes(y=w12, color="beta12")) + 
-    geom_line(aes(y=w13, color="beta13")) + 
-    #geom_line(aes(y=w23, color="beta23")) + 
-    geom_hline(aes(yintercept=2, color="beta12"), linetype=2) +
-    geom_hline(aes(yintercept=-0.2, color="beta13"), linetype=2) +
-    #geom_hline(aes(yintercept=+0.3, color="beta23"), linetype=2) +
-    scale_color_manual(
-      values=c('beta12'='skyblue', 'beta13'='red'),
-      labels=c(expression(beta[12]), expression(beta[13]))
-    ) +
-    labs(x='Epoch', y='Coefficients') +
-    theme_minimal() +
-    theme(
-      legend.title = element_blank(),   # Removes the legend title
-      legend.position = c(0.85, 0.25),  # Adjust this to position the legend inside the plot (lower-right)
-      legend.background = element_rect(fill="white", colour="black")  # Optional: white background with border
-    )
-  
-  file_name <- paste0(fn, "_coef_epoch.pdf")
-  # Save the plot
-  ggsave(file_name, plot = p, width = 8, height = 6)
-  file_path <- file.path("/Users/oli/Library/CloudStorage/Dropbox/Apps/Overleaf/tramdag/figures", basename(file_name))
-  ggsave(file_path, plot = p, width = 8/2, height = 6/2)
-}
-
-if (FALSE){
-# Creating the figure for the paper 
-# triangle_mixed_DPGLinear_ModelLS_coef_epoch 
-  p = ggplot(ws, aes(x=1:nrow(ws))) + 
-    geom_line(aes(y=w12, color="beta12")) + 
-    geom_line(aes(y=w13, color="beta13")) + 
-    geom_line(aes(y=w23, color="beta23")) + 
-    geom_hline(aes(yintercept=2, color="beta12"), linetype=2) +
-    geom_hline(aes(yintercept=-0.2, color="beta13"), linetype=2) +
-    geom_hline(aes(yintercept=+0.3, color="beta23"), linetype=2) +
-    scale_color_manual(
-      values=c('beta12'='skyblue', 'beta13'='red', 'beta23'='darkgreen'),
-      labels=c(expression(beta[12]), expression(beta[13]), expression(beta[23]))
-    ) +
-    labs(x='Epoch', y='Coefficients') +
-    theme_minimal() +
-    theme(
-      legend.title = element_blank(),   # Removes the legend title
-      legend.position = c(0.85, 0.25),  # Adjust this to position the legend inside the plot (lower-right)
-      legend.background = element_rect(fill="white", colour="black")  # Optional: white background with border
-    )
-  
-  file_name <- paste0(fn, "_coef_epoch.pdf")
-  # Save the plot
-  ggsave(file_name, plot = p, width = 8, height = 6)
-  file_path <- file.path("/Users/oli/Library/CloudStorage/Dropbox/Apps/Overleaf/tramdag/figures", basename(file_name))
-  ggsave(file_path, plot = p, width = 8/2, height = 6/2)
-}
-
-param_model$evaluate(x = train$df_orig, y=train$df_scaled) #Does not work, probably TF Eager vs Compiled
-# One more step to estimate NLL
-if (FALSE){
-  vals = NULL
-  for (i in 1:10){
-    test  = dgp(40000, i+10001)
-    hist = param_model$fit(x = train$df_orig, y = train$df_orig, 
-                    epochs = 1L, verbose = TRUE, 
-                    validation_data = list(test$df_orig,test$df_orig))
-    vals = append(vals, hist$history$val_loss)
-  }
-  t.test(vals)
-  M32
-  F32
-}
-fn
-len_theta
-param_model$get_layer(name = "beta")$get_weights() * param_model$get_layer(name = "beta")$mask
-
-
-#### Checking the transformation ####
-h_params = param_model(train$df_orig)
-r = check_baselinetrafo(h_params)
-Xs = r$Xs
-h_I = r$h_I
-
-##### X1
-fit.1 = Colr(X1~1,df, order=len_theta)
-plot(fit.1, which = 'baseline only', main='Black: COLR, Red: Our Model')
-lines(Xs[,1], h_I[,1], col='red', lty=2, lwd=3)
-rug(train$df_orig$numpy()[,1], col='blue')
-
-
-df = data.frame(train$df_orig$numpy())
-fit.21 = Colr(X2~X1,df, order=len_theta)
-temp = model.frame(fit.21)[1:2,-1, drop=FALSE] #WTF!
-plot(fit.21, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
-     main='h_I(X2) Black: COLR, Red: Our Model', cex.main=0.8)
-lines(Xs[,2], h_I[,2], col='red', lty=2, lwd=5)
-rug(train$df_orig$numpy()[,2], col='blue')
-
-fit.312 = Colr(X3 ~ X1 + X2,df, order=len_theta)
-temp = model.frame(fit.312)[1:2, -1, drop=FALSE] #WTF!
-
-plot(fit.312, which = 'baseline only', newdata = temp, lwd=2, col='blue', 
-     main='h_I(X3) Colr and Our Model', cex.main=0.8)
-lines(Xs[,3], h_I[,3], col='red', lty=2, lwd=5)
-rug(train$df_orig$numpy()[,3], col='blue')
-
-
-if (FALSE){
-  # Check the derivatives of h w.r.t. x
-  x <- tf$ones(shape = c(10L, 3L)) #B,P
-  with(tf$GradientTape(persistent = TRUE) %as% tape, {
-    tape$watch(x)
-    y <- param_model(x)
-  })
-  d <- tape$jacobian(y, x)
-  for (k in 1:(2+len_theta)){ #k = 1
-    print(k) #B,P,k,B,P
-    B = 1
-    print(d[B,,k,B,]) #
-  }
-}
 
 ##### Checking observational distribution ####
 library(car)
@@ -481,6 +197,236 @@ for (i in 1:3){
 }
 par(mfrow=c(1,1))
 
+##### Plot for paper ####
+Xref <- as.matrix(read_csv("data/VACA1_triangle_lin/25K/VACA1_triangle_LIN_XobsModel.csv", col_names = FALSE))
+names <- c("Ours", "CNF", "DGP")  
+custom_colors <- c("Ours" = "#1E88E5", "CNF" = "#FFC107", "DGP" = "red")  
+
+XDGP = dgp(25000)$df_orig$numpy()
+Xmodel = s$numpy()
+
+Xmodel_df <- as.data.frame(Xmodel)
+colnames(Xmodel_df) <- c("X1", "X2", "X3")
+Xmodel_df$Type <- names[1]
+
+Xref_df <- as.data.frame(Xref)
+colnames(Xref_df) <- c("X1", "X2", "X3")
+Xref_df$Type <- names[2]
+
+XDGP_df <- as.data.frame(XDGP)
+colnames(XDGP_df) <- c("X1", "X2", "X3")
+XDGP_df$Type <- names[3]
+all_data <- rbind(Xmodel_df, Xref_df, XDGP_df)
+
+# Function to extract legend
+get_legend <- function(my_plot){
+  tmp <- ggplot2::ggplot_gtable(ggplot2::ggplot_build(my_plot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+
+createPlotMatrix <- function(data, type_col, var_names,text_size = 20, axis_title_size = 18) {
+  plot_list <- list()
+  for (i in 1:3) {
+    for (j in 1:3) {
+      if (i == j) {
+        p <- ggplot(data, aes_string(x = var_names[i], fill = type_col)) +
+          geom_density(alpha = 0.4) +
+          scale_fill_manual(values = custom_colors, name = "Methods") +
+          theme_minimal() +
+          theme(text = element_text(size = text_size), axis.title = element_text(size = axis_title_size)) +
+          theme(legend.position = "none")
+      } else if (i > j) {
+        p <- ggplot(data, aes_string(x = var_names[j], y = var_names[i])) +
+          geom_density_2d(aes_string(color = type_col), size = 0.5, breaks = c(0.01, 0.04)) +
+          scale_color_manual(values = custom_colors, name = "Methods") +
+          theme_minimal() +
+          theme(text = element_text(size = text_size), axis.title = element_text(size = axis_title_size)) +
+          theme(legend.position = "none")
+      } else {
+        sub_data <- data[sample(nrow(data), 5000), ]
+        p <- ggplot(sub_data, aes_string(x = var_names[j], y = var_names[i], color = type_col)) +
+          geom_point(shape = 1, alpha = 0.4) +
+          scale_color_manual(values = custom_colors, name = "Methods") +
+          theme_minimal() +
+          theme(text = element_text(size = text_size), axis.title = element_text(size = axis_title_size)) +
+          theme(legend.position = "none")
+      }
+      if (j == 3) {
+        p = p + xlim(-6, 6)
+      }
+      if (i == 3 & j < 3) {
+        p = p + ylim(-6, 6)
+      }
+      plot_list[[paste0(i, "_", j)]] = p
+    }
+  }
+  
+  # Combine plots using ggarrange function from ggpubr package
+  combined <- ggarrange(
+    plotlist = plot_list, 
+    ncol = 3, nrow = 3, 
+    common.legend = TRUE, 
+    legend = "bottom"
+  )
+  
+  return(combined)
+}
+
+library(ggpubr)
+g = createPlotMatrix(all_data, "Type", c("X1", "X2", "X3"))
+g
+filename = paste0(fnh5, "_observations.pdf")
+ggsave(filename)
+if (FALSE){
+  file.copy(filename, '~/Dropbox/Apps/Overleaf/tramdag/figures/', overwrite = TRUE)
+}
+
+############## Do Effects ########
+
+
+doX=c(1, NA, NA)
+look_at = 3L
+s_dag = do_dag_struct(param_model, train$A, doX)
+sdgp = dgp(10000, doX=doX, seed=SEED)
+median(sdgp$df_orig$numpy()[,look_at])
+median(s_dag[,look_at]$numpy())
+boxplot(sdgp$df_orig$numpy()[,look_at], notch = TRUE)
+abline(h=-0.110043)
+
+boxplot(s_dag[,look_at]$numpy(), notch = TRUE, ylim=c(-5,5))
+abline(h=-0.726061)
+
+hist(sdgp$df_orig$numpy()[,look_at], freq=FALSE, 50, xlab='samples', 
+     sub='Histogram from DGP with do. red:TRAM_DAG', col='blue')
+
+sample_dag = s_dag[,look_at]$numpy()
+lines(density(sample_dag), col='red', lw=2)
+lines(density(sdgp$df_orig$numpy()[,look_at]), col='blue')
+
+library(car)
+qqplot(sdgp$df_orig$numpy()[,look_at], sample_dag, xlim=c(-5,5), ylim=c(-5,5))
+rug(quantile(train$df_orig$numpy()[,look_at], c(0.05, 0.95)), col='red')
+abline(0,1)
+
+
+####### Figure 2 (\label{fig:VACA1Triangle_L2}) #####################
+dox_origs = c(-3,-1, 0)
+num_samples = 25142L
+
+#### Sampling for model and DGP
+inter_mean_dgp_x2 = inter_mean_dgp_x3 = inter_mean_ours_x2 = inter_mean_ours_x3 = NA*dox_origs
+inter_dgp_x2 = inter_dgp_x3 = inter_ours_x2 = inter_ours_x3 = matrix(NA, nrow=length(dox_origs), ncol=num_samples)
+
+for (i in 1:length(dox_origs)){
+  # i = 1
+  ### Our Model
+  dox_orig = dox_origs[i]
+  s = do_dag_struct(param_model, MA, doX=c(NA, dox_orig, NA), num_samples = num_samples)
+  inter_ours_x2[i,] = s$numpy()[,2]
+  inter_ours_x3[i,] = s$numpy()[,3]
+  
+  ### DGP
+  #d = dgp(num_samples,doX2=dox_orig)
+  res = dgp(num_samples, doX = c(NA, dox_orig, NA))$df_orig$numpy()
+  inter_dgp_x2[i,] = res[,2]
+  inter_dgp_x3[i,] = res[,3]
+}
+
+summary(inter_dgp_x3[1,])
+summary(inter_ours_x3[1,])
+#### Reformating for ggplot
+#Preparing a df for ggplot for selected do-values
+df_do = data.frame(dox=numeric(0),x2=numeric(0),x3=numeric(0), type=character(0))
+
+
+for (step in 1:length(dox_origs)){
+  df_do = rbind(df_do, data.frame(
+    dox = dox_origs[step],
+    x2 = inter_dgp_x2[step,],
+    x3 = inter_dgp_x3[step,],
+    type = 'DGP'
+  ))
+  ok_index = inter_ours_x3[step,, drop=TRUE] > -10 & inter_ours_x3[step,, drop=TRUE] < 10
+  df_do = rbind(df_do, data.frame(
+    dox = dox_origs[step],
+    x2 = inter_ours_x2[step,ok_index],
+    x3 = inter_ours_x3[step,ok_index], # #inter_ours_x3[step,],
+    type = 'Ours'
+  )
+  )
+}
+
+### Loading the data from VACA2
+NSF = TRUE
+NSF = FALSE
+if (NSF){
+  X_inter <- read_csv("data/VACA1_triangle_lin/NSF/vaca1_triangle_lin_Xinter_x2=-3.csv", col_names = FALSE)
+} else{
+  X_inter <- read_csv("data/VACA1_triangle_lin/25K/vaca1_triangle_lin_Xinter_x2=-3.csv", col_names = FALSE)
+}
+df_do = rbind(df_do, data.frame(
+  dox = -3,
+  x2 = X_inter$X2,
+  x3 = X_inter$X3,
+  type = 'CNF' 
+))
+
+if (NSF){
+  X_inter <- read_csv("data/VACA1_triangle_lin/NSF/vaca1_triangle_lin_Xinter_x2=-1.csv", col_names = FALSE)
+} else{
+  X_inter <- read_csv("data/VACA1_triangle_lin/25K/vaca1_triangle_lin_Xinter_x2=-1.csv", col_names = FALSE)
+}
+df_do = rbind(df_do, data.frame(
+  dox = -1,
+  x2 = X_inter$X2,
+  x3 = X_inter$X3,
+  type = 'CNF' 
+))
+
+if (NSF){
+  X_inter <- read_csv("data/VACA1_triangle_lin/NSF/vaca1_triangle_lin_Xinter_x2=0.csv", col_names = FALSE)
+} else{
+  X_inter <- read_csv("data/VACA1_triangle_lin/25K/vaca1_triangle_lin_Xinter_x2=0.csv", col_names = FALSE)
+}
+
+df_do = rbind(df_do, data.frame(
+  dox = 0,
+  x2 = X_inter$X2,
+  x3 = X_inter$X3,
+  type = 'CNF' 
+))
+
+
+text_size = 20
+axis_title_size = 18
+#geom_density(alpha = 0.4) +
+#  scale_fill_manual(values = custom_colors, name = "Methods")
+
+# Custom labeller function
+custom_labeller <- function(variable, value) {
+  return(paste("doX2 =", value))
+}
+
+# Your ggplot code
+ggplot(df_do) + 
+  geom_density(aes(x=x3, fill=type), alpha=0.4, adjust = 1.5) + 
+  xlim(-7, 5) +
+  ylab("p(x3|do(x2)") +
+  scale_fill_manual(values = custom_colors, name = "Methods") +
+  facet_grid(~dox, labeller = custom_labeller) +  # Apply custom labeller here
+  facet_grid(~dox, labeller = custom_labeller) +
+  theme_minimal() +
+  theme(text = element_text(size = text_size),
+        axis.title = element_text(size = axis_title_size)) +
+  theme(axis.text.x = element_text(angle = 90))#, panel.spacing = unit(1, "lines"))
+
+
+
+
+HIER ALTES ZEUGS
 ######### Simulation of do-interventions #####
 doX=c(0.2, NA, NA)
 dx0.2 = dgp(10000, doX=doX, seed=SEED)

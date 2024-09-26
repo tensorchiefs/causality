@@ -6,7 +6,7 @@ reticulate::py_config()
 # Get command-line arguments - if called via sh
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) == 0) {  # if not called via sh
-  args <- c(5, 'cs') 
+  args <- c(1, 'cs') 
 }
 F32 <- as.numeric(args[1])
 M32 <- args[2]
@@ -367,6 +367,7 @@ if (FALSE){
   
   file_name <- paste0(fn, "_coef_epoch.pdf")
   # Save the plot
+  ### NOTE THAT WE RENAMED THE PRODUCED FILE and added the PATH due to nameing conflict (the continuous files are wrongly named mixed)
   ggsave(file_name, plot = p, width = 8, height = 6)
   file_path <- file.path("/Users/oli/Library/CloudStorage/Dropbox/Apps/Overleaf/tramdag/figures", basename(file_name))
   ggsave(file_path, plot = p, width = 8/2, height = 6/2)
@@ -534,13 +535,21 @@ sample_dag_0.2 = s_dag[,2]$numpy()
 lines(density(sample_dag_0.2), col='red', lw=2)
 m_x2_do_x10.2 = median(sample_dag_0.2)
 
-
-s_dag = do_dag_struct(param_model, train$A, doX=c(0.2, NA, NA))
-hist(dx0.2$df_orig$numpy()[,3], freq=FALSE, 50, main='X3 | Do(X1=0.2)', xlab='samples', 
+doX=c(NA, -1, NA)
+s_dag = do_dag_struct(param_model, train$A, doX)
+sdgp = dgp(10000, doX=doX, seed=SEED)
+hist(sdgp$df_orig$numpy()[,3], freq=FALSE, 50, xlab='samples', 
      sub='Histogram from DGP with do. red:TRAM_DAG')
-sample_dag_0.2 = s_dag[,3]$numpy()
-lines(density(sample_dag_0.2), col='red', lw=2)
+sample_dag = s_dag[,3]$numpy()
+lines(density(sample_dag), col='red', lw=2)
 
+doX=c(1, NA, NA)
+s_dag = do_dag_struct(param_model, train$A, doX)
+sdgp = dgp(10000, doX=doX, seed=SEED)
+hist(sdgp$df_orig$numpy()[,2], freq=FALSE, 50, xlab='samples', 
+     sub='Histogram from DGP with do. red:TRAM_DAG')
+sample_dag = s_dag[,2]$numpy()
+lines(density(sample_dag), col='red', lw=2)
 
 ###### Comparison of estimated f(x2) vs TRUE f(x2) #######
 shift_12 = shift_23 = shift1 = cs_23 = xs = seq(-1,1,length.out=41)

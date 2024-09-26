@@ -202,7 +202,7 @@ create_directories_if_not_exist <- function(dir_path) {
 }
 
 calc_NLL = function(nn_theta_tile, parents, target, target_index=NULL){
-  if (target_index != NULL) {
+  if (!is.null(target_index)) {
    if (model_tagettype == 'cont') {
      ### Modelling the intercept
      cis = which(model_A[,target_index] == 'ci')
@@ -638,7 +638,11 @@ load_weights = function(epoch, l){
   
   NLL_val = NLL_train = NLL_val2 = 0  
   for(i in 1:ncol(val$A)) { # Assuming that thetaNN_l, parents_l and target_l have the same length
-    NLL_train = NLL_train + calc_NLL(thetaNN_l[[i]], train_data$parents[[i]], train_data$target[[i]])$numpy()
+    #nn_theta_tile, parents, target, target_index=NULL
+    NLL_train = NLL_train + calc_NLL(
+        nn_theta_tile = thetaNN_l[[i]], 
+        parents = train_data$parents[[i]], 
+        target = train_data$target[[i]])$numpy()
     NLL_val = NLL_val + calc_NLL(thetaNN_l[[i]], val_data$parents[[i]], val_data$target[[i]])$numpy()
     #NLL_val2 = NLL_val2 + calc_NLL(thetaNN_l[[i]], parents_l_val2[[i]], target_l_val2[[i]])$numpy()
   }

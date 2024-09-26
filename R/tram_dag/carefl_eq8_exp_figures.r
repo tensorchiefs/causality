@@ -4,7 +4,8 @@ source('configs/configs_defaults.r')
 source('configs/config_user.r')
 source('configs/config_carefl_eq8.R')
 
-config_user("beate_server")
+#config_user("beate_server")
+config_user("oliver")
 
 short_name = "carefl_eq8"
 ( SUFFIX = get_suffix(short_name ) )
